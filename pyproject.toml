@@ -1,0 +1,45 @@
+[project]
+name = "scribnic"
+version = "0.1.0"
+description = "Local transcription and speaker diarization pipeline"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "nemo-toolkit[asr] @ git+https://github.com/NVIDIA-NeMo/Speech.git@5dbdde68d3897c03faeda1b0d9655cd90b1c5e08",
+    "omegaconf>=2.3,<3",
+    "openai>=1,<3",
+    "transformers @ git+https://github.com/huggingface/transformers.git@89b6b17574892ec0770551537a3fe69d6886703e",
+    "torch[device-gfx1151]==2.12.0+rocm7.14.1",
+    "rocm[libraries]==7.14.1",
+    "rocm-sdk-core==7.14.1",
+    "rocm-sdk-libraries==7.14.1",
+    "rocm-sdk-device-gfx1151==7.14.1",
+    "amd-torch-device-gfx1151==2.12.0+rocm7.14.1",
+    "amd-torch-device-gfx115x==2.12.0+rocm7.14.1",
+    "triton==3.8.0+git4cff872c.rocm7.14.1",
+]
+
+[tool.uv]
+environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
+
+[tool.uv.sources]
+torch = { index = "amd-rocm" }
+rocm = { index = "amd-rocm" }
+rocm-sdk-core = { index = "amd-rocm" }
+rocm-sdk-libraries = { index = "amd-rocm" }
+rocm-sdk-device-gfx1151 = { index = "amd-rocm" }
+amd-torch-device-gfx1151 = { index = "amd-rocm" }
+amd-torch-device-gfx115x = { index = "amd-rocm" }
+triton = { index = "amd-rocm" }
+
+[[tool.uv.index]]
+name = "amd-rocm"
+url = "https://repo.amd.com/rocm/whl-multi-arch/"
+explicit = true
+
+[project.scripts]
+scribnic = "scribnic.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.12.16,<0.13.0"]
+build-backend = "uv_build"
