@@ -1,8 +1,11 @@
 """Fast checks for stage composition and model output conversion."""
 
 import unittest
+import tempfile
+import wave
 from pathlib import Path
 
+from scribnic.backends.asr import audio_chunks
 from scribnic.core import Pipeline
 from scribnic.models import Audio, SpeakerSpan, TextSpan, Utterance
 from scribnic.backends.joint import parse_moss_transcript
@@ -31,6 +34,20 @@ class JointRecognizer:
 
 
 class PipelineTests(unittest.TestCase):
+    def test_audio_chunks_follow_speaker_regions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "audio.wav"
+            with wave.open(str(path), "wb") as wav:
+                wav.setparams((1, 2, 16000, 0, "NONE", "not compressed"))
+                wav.writeframes(b"\0\0" * 5 * 16000)
+            audio = Audio(path, 16000, 5)
+            speakers = (SpeakerSpan(1, 2, "speaker_0"), SpeakerSpan(3, 5, "speaker_1"))
+            chunks = list(audio_chunks(audio, speakers, max_seconds=1))
+
+        self.assertEqual([(start, end) for start, end, _ in chunks],
+                         [(1, 2), (3, 4), (4, 5)])
+        self.assertTrue(all(len(samples) == 16000 for _, _, samples in chunks))
+
     def test_separate_stages_and_overlap(self):
         result = Pipeline(SeparateTranscriber(), SeparateDiarizer()).run(Source())
         self.assertEqual([turn.speaker for turn in result.utterances],

@@ -10,6 +10,7 @@ from .core import Pipeline
 ASR_MODELS = {
     "nemotron": ("asr", "NemotronTranscriber", False),
     "canary": ("asr", "CanaryTranscriber", True),
+    "qwen": ("asr", "QwenTranscriber", False),
 }
 DIARIZERS = {
     "nemotron": ("diarization", "NemotronDiarizer", False),

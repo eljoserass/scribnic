@@ -36,6 +36,14 @@ uv run scribnic entrada.wav --asr canary --diarizer sortformer
 
 `--model moss` usa MOSS-Transcribe-Diarize para transcripción y diarización en una sola pasada; no ejecuta `--asr` ni `--diarizer`. Mantiene las marcas temporales y etiquetas de hablante que devuelve el modelo. MOSS carga código remoto de su repositorio de Hugging Face (`trust_remote_code=True`); úsalo solo si confías en ese checkpoint.
 
+Qwen3-ASR-0.6B-hf transcribe, pero no devuelve etiquetas de hablante ni tiempos por sí solo. Se puede combinar con un diarizador:
+
+```bash
+uv run scribnic entrada.wav --asr qwen --diarizer nemotron
+```
+
+El adaptador de Qwen procesa regiones de hasta 30 segundos y les asigna esos tiempos aproximados. La calidad de la atribución de hablantes depende del diarizador elegido.
+
 `--device auto` (por defecto) usa la GPU si PyTorch la detecta y CPU si no. `--device cpu` y `--device cuda:0` eligen el dispositivo para **ambos modelos**; PyTorch llama `cuda:0` a la GPU AMD con ROCm. La inferencia en CPU puede ser lenta. Los pesos se descargan en la primera ejecución real. El modelo nuevo de diarización necesita la versión de Transformers desde Git fijada en `pyproject.toml`, porque la versión publicada anteriormente no reconoce su arquitectura. NeMo, usado por los modelos antiguos, puede necesitar espacio en disco al descomprimirlos; el programa usa `~/.cache/scribnic/tmp` salvo que `TMPDIR` esté definido.
 
 ## Estructura

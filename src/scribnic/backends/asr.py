@@ -26,6 +26,21 @@ def speech_regions(speakers: tuple[SpeakerSpan, ...], duration: float) -> tuple[
     return tuple(regions)
 
 
+def audio_chunks(audio: Audio, speakers: tuple[SpeakerSpan, ...], max_seconds: int = 30):
+    """Yield bounded mono float32 chunks with offsets in the original audio clock."""
+    import numpy as np
+
+    with wave.open(str(audio.path), "rb") as wav:
+        for region_start, region_end in speech_regions(speakers, audio.duration):
+            start_frame = min(round(region_start * audio.sample_rate), wav.getnframes())
+            end_frame = min(round(region_end * audio.sample_rate), wav.getnframes())
+            for frame in range(start_frame, end_frame, max_seconds * audio.sample_rate):
+                frames = min(end_frame - frame, max_seconds * audio.sample_rate)
+                wav.setpos(frame)
+                samples = np.frombuffer(wav.readframes(frames), dtype="<i2").astype("float32") / 32768
+                yield frame / audio.sample_rate, (frame + frames) / audio.sample_rate, samples
+
+
 class NemotronTranscriber:
     """Transcribe diarized regions with the multilingual Nemotron 3.5 ASR model.
 
@@ -44,32 +59,48 @@ class NemotronTranscriber:
         self.language = language
 
     def transcribe(self, audio: Audio, speakers: tuple[SpeakerSpan, ...]) -> tuple[TextSpan, ...]:
-        import numpy as np
-
         spans = []
-        with wave.open(str(audio.path), "rb") as wav:
-            for region_start, region_end in speech_regions(speakers, audio.duration):
-                # Bound memory usage for long uninterrupted turns.
-                start_frame = min(round(region_start * audio.sample_rate), wav.getnframes())
-                end_frame = min(round(region_end * audio.sample_rate), wav.getnframes())
-                for frame in range(start_frame, end_frame, 30 * audio.sample_rate):
-                    frames = min(end_frame - frame, 30 * audio.sample_rate)
-                    if frames <= 0:
-                        continue
-                    wav.setpos(frame)
-                    samples = np.frombuffer(wav.readframes(frames), dtype="<i2").astype("float32") / 32768
-                    inputs = self.processor(
-                        samples, sampling_rate=audio.sample_rate,
-                        language=self.language, return_tensors="pt",
-                    ).to(self.model.device, dtype=self.model.dtype)
-                    with self.torch.inference_mode():
-                        output = self.model.generate(**inputs, return_dict_in_generate=True)
-                    text = self.processor.batch_decode(
-                        output.sequences, skip_special_tokens=True,
-                    )[0].strip()
-                    if text:
-                        spans.append(TextSpan(frame / audio.sample_rate,
-                                              (frame + frames) / audio.sample_rate, text))
+        for start, end, samples in audio_chunks(audio, speakers):
+            inputs = self.processor(
+                samples, sampling_rate=audio.sample_rate,
+                language=self.language, return_tensors="pt",
+            ).to(self.model.device, dtype=self.model.dtype)
+            with self.torch.inference_mode():
+                output = self.model.generate(**inputs, return_dict_in_generate=True)
+            text = self.processor.batch_decode(
+                output.sequences, skip_special_tokens=True,
+            )[0].strip()
+            if text:
+                spans.append(TextSpan(start, end, text))
+        return tuple(spans)
+
+
+class QwenTranscriber:
+    """Qwen3-ASR produces text, while the selected diarizer supplies its regions."""
+
+    MODEL = "Qwen/Qwen3-ASR-0.6B-hf"
+
+    def __init__(self, device: str, language: str = "es-ES"):
+        import torch
+        from transformers import AutoModelForMultimodalLM, AutoProcessor
+
+        self.torch = torch
+        self.processor = AutoProcessor.from_pretrained(self.MODEL)
+        self.model = AutoModelForMultimodalLM.from_pretrained(self.MODEL).to(device).eval()
+        self.language = language.split("-")[0]
+
+    def transcribe(self, audio: Audio, speakers: tuple[SpeakerSpan, ...]) -> tuple[TextSpan, ...]:
+        spans = []
+        for start, end, samples in audio_chunks(audio, speakers):
+            inputs = self.processor.apply_transcription_request(
+                audio=samples, language=self.language,
+            ).to(self.model.device, self.model.dtype)
+            with self.torch.inference_mode():
+                output = self.model.generate(**inputs, max_new_tokens=512, do_sample=False)
+            generated = output[:, inputs["input_ids"].shape[1]:]
+            text = self.processor.decode(generated, return_format="transcription_only")[0].strip()
+            if text:
+                spans.append(TextSpan(start, end, text))
         return tuple(spans)
 
 
