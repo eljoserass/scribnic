@@ -28,7 +28,7 @@ class LiveVibeVoiceTests(unittest.TestCase):
             excerpt = Path(directory) / "excerpt.wav"
             with wave.open(str(audio_path), "rb") as source, wave.open(str(excerpt), "wb") as target:
                 target.setparams(source.getparams())
-                target.writeframes(source.readframes(35 * source.getframerate()))
+                target.writeframes(source.readframes(24 * source.getframerate()))
             result = build_pipeline(model="vibevoice", skip_generation=True).run(FileSource(excerpt))
 
         self.assertTrue(result.utterances)

@@ -47,6 +47,15 @@ El adaptador de Qwen procesa regiones de hasta 30 segundos y les asigna esos tie
 
 `--model vibevoice` utiliza `microsoft/VibeVoice-ASR-HF`, la versión **no streaming** compatible con la versión de Transformers fijada en este proyecto. A diferencia del checkpoint `VibeVoice-ASR-Streaming-7B` del experimento local, devuelve transcripción, hablante y tiempos de cada segmento. Es un modelo grande y requiere mucha memoria de GPU o RAM; su primera ejecución descarga los pesos. El checkpoint streaming requiere el paquete externo `vibevoice` con Transformers 4.x, incompatible con el Transformers 5.x que usan los otros modelos aquí.
 
+Para limitar la concurrencia de las descargas, descarga primero el checkpoint con un solo archivo y una sola solicitud Xet a la vez; después ejecuta sin acceso al Hub:
+
+```bash
+HF_XET_NUM_CONCURRENT_RANGE_GETS=1 uv run hf download microsoft/VibeVoice-ASR-HF --max-workers 1
+HF_HUB_OFFLINE=1 uv run scribnic entrada.wav --model vibevoice
+```
+
+Esto reduce la concurrencia, pero no garantiza un límite exacto de MB/s. En una GPU de 20 GB y 11 GB de RAM, VibeVoice necesitó mantener parte del modelo en CPU y la prueba de dos hablantes resultó demasiado lenta para completarla; el adaptador y la carga del modelo sí se verificaron, pero no su salida real en esa máquina.
+
 `--device auto` (por defecto) usa la GPU si PyTorch la detecta y CPU si no. `--device cpu` y `--device cuda:0` eligen el dispositivo para **ambos modelos**; PyTorch llama `cuda:0` a la GPU AMD con ROCm. La inferencia en CPU puede ser lenta. Los pesos se descargan en la primera ejecución real. El modelo nuevo de diarización necesita la versión de Transformers desde Git fijada en `pyproject.toml`, porque la versión publicada anteriormente no reconoce su arquitectura. NeMo, usado por los modelos antiguos, puede necesitar espacio en disco al descomprimirlos; el programa usa `~/.cache/scribnic/tmp` salvo que `TMPDIR` esté definido.
 
 ## Estructura

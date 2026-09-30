@@ -98,14 +98,26 @@ class VibeVoiceRecognizer:
     MODEL = "microsoft/VibeVoice-ASR-HF"
 
     def __init__(self, device: str):
+        import psutil
         import torch
         from transformers import AutoProcessor, VibeVoiceAsrForConditionalGeneration
 
         self.torch = torch
         dtype = torch.bfloat16 if device.startswith("cuda") else torch.float32
         self.processor = AutoProcessor.from_pretrained(self.MODEL)
+        model_kwargs = {"dtype": dtype, "device_map": device}
+        if device.startswith("cuda"):
+            free_vram, _ = torch.cuda.mem_get_info(device)
+            gibibyte = 1024 ** 3
+            model_kwargs.update(
+                device_map="auto",
+                max_memory={
+                    torch.device(device).index or 0: max(gibibyte, free_vram - 7 * gibibyte),
+                    "cpu": max(gibibyte, psutil.virtual_memory().available - 2 * gibibyte),
+                },
+            )
         self.model = VibeVoiceAsrForConditionalGeneration.from_pretrained(
-            self.MODEL, dtype=dtype, device_map=device,
+            self.MODEL, **model_kwargs,
         ).eval()
 
     def recognize(self, audio: Audio) -> tuple[Utterance, ...]:
@@ -114,7 +126,7 @@ class VibeVoiceRecognizer:
         )
         with self.torch.inference_mode():
             output = self.model.generate(
-                **inputs, max_new_tokens=min(32768, max(1024, round(audio.duration * 20))),
+                **inputs, max_new_tokens=min(32768, max(512, round(audio.duration * 20))),
                 do_sample=False,
             )
         generated = output[:, inputs["input_ids"].shape[1]:]
