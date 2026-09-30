@@ -1,29 +1,37 @@
 """Construct a pipeline from model registries without importing unused backends."""
 
-from importlib import import_module
 import os
 import tempfile
+from dataclasses import dataclass
+from importlib import import_module
 from pathlib import Path
 
 from .core import Pipeline
 
+@dataclass(frozen=True)
+class BackendSpec:
+    module: str
+    class_name: str
+    needs_nemo_temp: bool = False
+
+
 ASR_MODELS = {
-    "nemotron": ("asr", "NemotronTranscriber", False),
-    "canary": ("asr", "CanaryTranscriber", True),
-    "qwen": ("asr", "QwenTranscriber", False),
+    "nemotron": BackendSpec("asr", "NemotronTranscriber"),
+    "canary": BackendSpec("asr", "CanaryTranscriber", needs_nemo_temp=True),
+    "qwen": BackendSpec("asr", "QwenTranscriber"),
 }
 DIARIZERS = {
-    "nemotron": ("diarization", "NemotronDiarizer", False),
-    "sortformer": ("diarization", "SortformerDiarizer", True),
+    "nemotron": BackendSpec("diarization", "NemotronDiarizer"),
+    "sortformer": BackendSpec("diarization", "SortformerDiarizer", needs_nemo_temp=True),
 }
 JOINT_MODELS = {
-    "moss": ("joint", "MossRecognizer", False),
+    "moss": BackendSpec("joint", "MossRecognizer"),
+    "vibevoice": BackendSpec("joint", "VibeVoiceRecognizer"),
 }
 
 
-def _backend(spec: tuple[str, str, bool]):
-    module, name, _ = spec
-    return getattr(import_module(f".backends.{module}", package=__package__), name)
+def _backend(spec: BackendSpec):
+    return getattr(import_module(f".backends.{spec.module}", package=__package__), spec.class_name)
 
 
 def build_pipeline(
@@ -42,7 +50,7 @@ def build_pipeline(
         raise ValueError("Unknown model implementation.")
 
     # NeMo unpacks large model archives. Avoid a small /tmp tmpfs on WSL.
-    if not model and (ASR_MODELS[asr][2] or DIARIZERS[diarizer][2]) and "TMPDIR" not in os.environ:
+    if not model and (ASR_MODELS[asr].needs_nemo_temp or DIARIZERS[diarizer].needs_nemo_temp) and "TMPDIR" not in os.environ:
         cache_root = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
         model_tmpdir = cache_root / "scribnic" / "tmp"
         model_tmpdir.mkdir(parents=True, exist_ok=True)

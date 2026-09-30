@@ -31,6 +31,24 @@ def parse_moss_transcript(output: str) -> tuple[Utterance, ...]:
     return tuple(turns)
 
 
+def parse_vibevoice_segments(segments: list[dict]) -> tuple[Utterance, ...]:
+    """Convert VibeVoice's parsed Who/When/What JSON, excluding non-speech events."""
+    if not isinstance(segments, list):
+        raise ValueError("VibeVoice did not return structured speaker segments.")
+    turns = []
+    for segment in segments:
+        if not isinstance(segment, dict) or not {"Start", "End", "Content"} <= segment.keys():
+            raise ValueError("VibeVoice returned an invalid speaker segment.")
+        content = segment["Content"].strip()
+        if not content or content.lower() in ("[silence]", "[music]"):
+            continue
+        speaker_id = segment.get("Speaker")
+        speaker = f"speaker_{speaker_id}" if speaker_id is not None else None
+        turns.append(Utterance(float(segment["Start"]), float(segment["End"]), content,
+                               speaker, (speaker,) if speaker is not None else ()))
+    return tuple(turns)
+
+
 class MossRecognizer:
     """MOSS Transcribe-Diarize via its Transformers remote-code interface."""
 
@@ -72,3 +90,33 @@ class MossRecognizer:
             output[0][prompt_length:], skip_special_tokens=True,
         ).strip()
         return parse_moss_transcript(transcript)
+
+
+class VibeVoiceRecognizer:
+    """Offline VibeVoice ASR; its native Transformers checkpoint includes timestamps."""
+
+    MODEL = "microsoft/VibeVoice-ASR-HF"
+
+    def __init__(self, device: str):
+        import torch
+        from transformers import AutoProcessor, VibeVoiceAsrForConditionalGeneration
+
+        self.torch = torch
+        dtype = torch.bfloat16 if device.startswith("cuda") else torch.float32
+        self.processor = AutoProcessor.from_pretrained(self.MODEL)
+        self.model = VibeVoiceAsrForConditionalGeneration.from_pretrained(
+            self.MODEL, dtype=dtype, device_map=device,
+        ).eval()
+
+    def recognize(self, audio: Audio) -> tuple[Utterance, ...]:
+        inputs = self.processor.apply_transcription_request(audio=str(audio.path)).to(
+            self.model.device, self.model.dtype,
+        )
+        with self.torch.inference_mode():
+            output = self.model.generate(
+                **inputs, max_new_tokens=min(32768, max(1024, round(audio.duration * 20))),
+                do_sample=False,
+            )
+        generated = output[:, inputs["input_ids"].shape[1]:]
+        segments = self.processor.decode(generated, return_format="parsed")[0]
+        return parse_vibevoice_segments(segments)

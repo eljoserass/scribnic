@@ -8,7 +8,7 @@ from pathlib import Path
 from scribnic.backends.asr import audio_chunks
 from scribnic.core import Pipeline
 from scribnic.models import Audio, SpeakerSpan, TextSpan, Utterance
-from scribnic.backends.joint import parse_moss_transcript
+from scribnic.backends.joint import VibeVoiceRecognizer, parse_moss_transcript, parse_vibevoice_segments
 
 
 class Source:
@@ -75,6 +75,49 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(turns[1].speaker, "speaker_1")
         with self.assertRaises(ValueError):
             parse_moss_transcript("not a transcript")
+
+    def test_vibevoice_parser(self):
+        segments = [
+            {"Start": 0.0, "End": 0.5, "Content": "[Silence]"},
+            {"Start": 0.5, "End": 1.5, "Speaker": 0, "Content": "Hola"},
+            {"Start": 1.5, "End": 2.5, "Speaker": 1, "Content": "Buenos días"},
+        ]
+        turns = parse_vibevoice_segments(segments)
+        self.assertEqual([turn.speaker for turn in turns], ["speaker_0", "speaker_1"])
+        self.assertEqual(turns[0].start, 0.5)
+        with self.assertRaises(ValueError):
+            parse_vibevoice_segments("bad")
+
+    def test_vibevoice_adapter_uses_parsed_segments(self):
+        import torch
+
+        class Inputs(dict):
+            def to(self, device, dtype):
+                return self
+
+        class Processor:
+            def apply_transcription_request(self, audio):
+                self.audio = audio
+                return Inputs(input_ids=torch.tensor([[1, 2]]))
+
+            def decode(self, generated, return_format):
+                self.generated = generated
+                return [[{"Start": 0, "End": 1, "Speaker": 0, "Content": "Hola"}]]
+
+        class Model:
+            device = "cpu"
+            dtype = torch.float32
+
+            def generate(self, **inputs):
+                return torch.tensor([[1, 2, 3]])
+
+        recognizer = VibeVoiceRecognizer.__new__(VibeVoiceRecognizer)
+        recognizer.torch = torch
+        recognizer.processor = Processor()
+        recognizer.model = Model()
+        turns = recognizer.recognize(Audio(Path("sample.wav"), 16000, 2))
+        self.assertEqual(turns[0].speaker, "speaker_0")
+        self.assertEqual(recognizer.processor.audio, "sample.wav")
 
 
 if __name__ == "__main__":
