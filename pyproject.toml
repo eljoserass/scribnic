@@ -5,6 +5,7 @@ description = "Local transcription and speaker diarization pipeline"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "accelerate>=1,<2",
     "nemo-toolkit[asr] @ git+https://github.com/NVIDIA-NeMo/Speech.git@5dbdde68d3897c03faeda1b0d9655cd90b1c5e08",
     "omegaconf>=2.3,<3",
     "openai>=1,<3",
