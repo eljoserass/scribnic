@@ -19,6 +19,10 @@ class Diarizer(Protocol):
     def diarize(self, audio: Audio) -> tuple[SpeakerSpan, ...]: ...
 
 
+class JointRecognizer(Protocol):
+    def recognize(self, audio: Audio) -> tuple[Utterance, ...]: ...
+
+
 class TextGenerator(Protocol):
     def generate(self, utterances: tuple[Utterance, ...], instruction: str) -> str: ...
 
@@ -52,16 +56,31 @@ def validate_timeline(spans: tuple[TextSpan, ...] | tuple[SpeakerSpan, ...], aud
 
 @dataclass
 class Pipeline:
-    transcriber: Transcriber
-    diarizer: Diarizer
+    transcriber: Transcriber | None = None
+    diarizer: Diarizer | None = None
     generator: TextGenerator | None = None
+    recognizer: JointRecognizer | None = None
 
     def run(self, source: AudioSource, instruction: str = "Summarize the conversation.") -> PipelineResult:
         audio = source.load()
-        speakers = self.diarizer.diarize(audio)
-        validate_timeline(speakers, audio)
-        text = self.transcriber.transcribe(audio, speakers)
+        if self.recognizer is not None:
+            if self.transcriber is not None or self.diarizer is not None:
+                raise ValueError("A joint recognizer cannot be combined with separate stages.")
+            utterances = self.recognizer.recognize(audio)
+            text = tuple(TextSpan(turn.start, turn.end, turn.text) for turn in utterances)
+            speakers = tuple(SpeakerSpan(turn.start, turn.end, turn.speaker)
+                             for turn in utterances if turn.speaker is not None)
+        else:
+            if self.transcriber is None or self.diarizer is None:
+                raise ValueError("Both transcriber and diarizer are required.")
+            speakers = self.diarizer.diarize(audio)
+            validate_timeline(speakers, audio)
+            text = self.transcriber.transcribe(audio, speakers)
+            utterances = attribute_speakers(text, speakers)
         validate_timeline(text, audio)
-        utterances = attribute_speakers(text, speakers)
+        validate_timeline(speakers, audio)
+        for turn in utterances:
+            if turn.speaker is not None and turn.speaker not in turn.candidates:
+                raise ValueError(f"Speaker is absent from candidates: {turn!r}")
         generated = self.generator.generate(utterances, instruction) if self.generator else None
         return PipelineResult(text, speakers, utterances, generated)

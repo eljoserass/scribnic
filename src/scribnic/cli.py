@@ -9,7 +9,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from .audio import FileSource
-from .factory import build_pipeline
+from .factory import ASR_MODELS, DIARIZERS, JOINT_MODELS, build_pipeline
 
 
 def main() -> None:
@@ -18,8 +18,9 @@ def main() -> None:
     parser.add_argument("--demo", action="store_true", help="Use deterministic example outputs")
     parser.add_argument("--device", default="auto", help="Both models: auto, cpu, or cuda:0 (ROCm also uses cuda:0)")
     parser.add_argument("--language", default="es-ES", help="ASR locale, e.g. es-ES or en-US")
-    parser.add_argument("--asr", choices=("nemotron", "canary"), default="nemotron")
-    parser.add_argument("--diarizer", choices=("nemotron", "sortformer"), default="nemotron")
+    parser.add_argument("--asr", choices=ASR_MODELS, default="nemotron")
+    parser.add_argument("--diarizer", choices=DIARIZERS, default="nemotron")
+    parser.add_argument("--model", choices=JOINT_MODELS, help="Joint transcription and diarization model")
     parser.add_argument("--llm-model", help="Model identifier served by LM Studio")
     parser.add_argument("--base-url", default="http://localhost:1234/v1")
     parser.add_argument("--skip-generation", action="store_true")
@@ -31,7 +32,7 @@ def main() -> None:
         with redirect_stdout(sys.stderr):
             pipeline = build_pipeline(
                 demo=args.demo, device=args.device, language=args.language,
-                asr=args.asr, diarizer=args.diarizer, llm_model=args.llm_model,
+                asr=args.asr, diarizer=args.diarizer, model=args.model, llm_model=args.llm_model,
                 base_url=args.base_url, skip_generation=args.skip_generation,
             )
             result = pipeline.run(source, args.instruction)

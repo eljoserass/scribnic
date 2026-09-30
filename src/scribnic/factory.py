@@ -1,15 +1,34 @@
-"""Choose the small set of supported model implementations."""
+"""Construct a pipeline from model registries without importing unused backends."""
 
+from importlib import import_module
 import os
 import tempfile
 from pathlib import Path
 
 from .core import Pipeline
 
+ASR_MODELS = {
+    "nemotron": ("asr", "NemotronTranscriber", False),
+    "canary": ("asr", "CanaryTranscriber", True),
+}
+DIARIZERS = {
+    "nemotron": ("diarization", "NemotronDiarizer", False),
+    "sortformer": ("diarization", "SortformerDiarizer", True),
+}
+JOINT_MODELS = {
+    "moss": ("joint", "MossRecognizer", False),
+}
+
+
+def _backend(spec: tuple[str, str, bool]):
+    module, name, _ = spec
+    return getattr(import_module(f".backends.{module}", package=__package__), name)
+
 
 def build_pipeline(
     *, demo: bool = False, device: str = "auto", language: str = "es-ES",
     asr: str = "nemotron", diarizer: str = "nemotron",
+    model: str | None = None,
     llm_model: str | None = None, base_url: str = "http://localhost:1234/v1",
     skip_generation: bool = False,
 ) -> Pipeline:
@@ -18,11 +37,11 @@ def build_pipeline(
 
         return Pipeline(DemoTranscriber(), DemoDiarizer(),
                         None if skip_generation else DemoTextGenerator())
-    if asr not in ("nemotron", "canary") or diarizer not in ("nemotron", "sortformer"):
-        raise ValueError("Unknown ASR or diarizer implementation.")
+    if asr not in ASR_MODELS or diarizer not in DIARIZERS or (model and model not in JOINT_MODELS):
+        raise ValueError("Unknown model implementation.")
 
     # NeMo unpacks large model archives. Avoid a small /tmp tmpfs on WSL.
-    if (asr == "canary" or diarizer == "sortformer") and "TMPDIR" not in os.environ:
+    if not model and (ASR_MODELS[asr][2] or DIARIZERS[diarizer][2]) and "TMPDIR" not in os.environ:
         cache_root = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
         model_tmpdir = cache_root / "scribnic" / "tmp"
         model_tmpdir.mkdir(parents=True, exist_ok=True)
@@ -43,13 +62,11 @@ def build_pipeline(
     if torch.version.hip is not None and device.startswith("cuda"):
         torch.backends.cudnn.enabled = False
 
-    from .backends.asr import CanaryTranscriber, NemotronTranscriber
-    from .backends.diarization import NemotronDiarizer, SortformerDiarizer
     from .backends.generation import LMStudioTextGenerator
 
     generator = (LMStudioTextGenerator(llm_model, base_url)
                  if llm_model and not skip_generation else None)
-    transcriber = (NemotronTranscriber(device, language) if asr == "nemotron"
-                   else CanaryTranscriber(device, language))
-    diarization = NemotronDiarizer(device) if diarizer == "nemotron" else SortformerDiarizer(device)
-    return Pipeline(transcriber, diarization, generator)
+    if model:
+        return Pipeline(generator=generator, recognizer=_backend(JOINT_MODELS[model])(device))
+    return Pipeline(_backend(ASR_MODELS[asr])(device, language),
+                    _backend(DIARIZERS[diarizer])(device), generator)

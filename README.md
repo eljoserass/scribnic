@@ -12,6 +12,7 @@ uv run scribnic entrada.wav
 uv run scribnic entrada.wav --llm-model ID_EN_LM_STUDIO
 uv run scribnic entrada.wav --device cpu
 uv run scribnic entrada.wav --device cuda:0
+uv run scribnic entrada.wav --model moss
 ```
 
 El comando imprime JSON con `transcription`, `diarization`, `utterances` y `generated_text`. Sin `--llm-model`, `generated_text` es `null`. Para probar el flujo sin descargar pesos ni llamar a LM Studio:
@@ -32,6 +33,8 @@ Para usar los modelos anteriores:
 ```bash
 uv run scribnic entrada.wav --asr canary --diarizer sortformer
 ```
+
+`--model moss` usa MOSS-Transcribe-Diarize para transcripción y diarización en una sola pasada; no ejecuta `--asr` ni `--diarizer`. Mantiene las marcas temporales y etiquetas de hablante que devuelve el modelo. MOSS carga código remoto de su repositorio de Hugging Face (`trust_remote_code=True`); úsalo solo si confías en ese checkpoint.
 
 `--device auto` (por defecto) usa la GPU si PyTorch la detecta y CPU si no. `--device cpu` y `--device cuda:0` eligen el dispositivo para **ambos modelos**; PyTorch llama `cuda:0` a la GPU AMD con ROCm. La inferencia en CPU puede ser lenta. Los pesos se descargan en la primera ejecución real. El modelo nuevo de diarización necesita la versión de Transformers desde Git fijada en `pyproject.toml`, porque la versión publicada anteriormente no reconoce su arquitectura. NeMo, usado por los modelos antiguos, puede necesitar espacio en disco al descomprimirlos; el programa usa `~/.cache/scribnic/tmp` salvo que `TMPDIR` esté definido.
 
@@ -59,6 +62,12 @@ result = pipeline.run(FileSource(Path("entrada.wav")))
 ```
 
 Los tiempos son segundos desde el inicio del archivo. Nemotron 3.5 ASR devuelve texto sin marcas de palabra en la API documentada, así que el adaptador transcribe regiones de diarización y les asigna tiempos aproximados de región. Divide turnos largos cada 30 segundos. Una región con voces simultáneas conserva varios `candidates` y deja `speaker` en `null`. Si el diarizador no detecta hablantes, se transcribe el archivo completo sin atribución. Canary conserva las marcas de palabra del flujo anterior.
+
+Para comprobar los contratos del pipeline sin descargar modelos:
+
+```bash
+uv run python -m unittest discover -s tests -v
+```
 
 ## Experimento multitalker anterior
 
