@@ -1,0 +1,5 @@
+- [ ] verificar modularidad al ejecturar pipeline y que se mantenga su construccion (eg, not pipe.run() but running diarizer, transcriber... separetly)
+- [ ] handle files different than .wav
+- [ ] streaming de audio IN, streaming results OUT
+- [ ] considerar detectar "quien" es el speaker con una configuracion incial de embedding de audio del doctor
+- [ ] considerar detectar idioma

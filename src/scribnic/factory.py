@@ -39,7 +39,8 @@ def build_pipeline(
     asr: str = "nemotron", diarizer: str = "nemotron",
     model: str | None = None,
     llm_model: str | None = None, base_url: str = "http://localhost:1234/v1",
-    skip_generation: bool = False,
+    skip_generation: bool = False, llm_max_tokens: int = 768,
+    llm_max_input_chars: int = 12000,
 ) -> Pipeline:
     if demo:
         from .backends.demo import DemoDiarizer, DemoTextGenerator, DemoTranscriber
@@ -73,7 +74,8 @@ def build_pipeline(
 
     from .backends.generation import LMStudioTextGenerator
 
-    generator = (LMStudioTextGenerator(llm_model, base_url)
+    generator = (LMStudioTextGenerator(llm_model, base_url, max_tokens=llm_max_tokens,
+                                     max_input_chars=llm_max_input_chars)
                  if llm_model and not skip_generation else None)
     if model:
         return Pipeline(generator=generator, recognizer=_backend(JOINT_MODELS[model])(device))

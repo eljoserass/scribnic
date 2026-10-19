@@ -14,3 +14,4 @@ wheels/
 /data/examples/
 /transcript.json
 /result.json
+/runs/
