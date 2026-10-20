@@ -96,11 +96,19 @@ class LlamaServer:
         return {
             "engine": "llama_cpp",
             "release": self.runtime.settings.get("release"),
-            "device": "metal" if platform.system() == "Darwin" else "cpu",
+            "gpu_layers_requested": self.command[self.command.index("-ngl") + 1],
             "pid": self.process.pid if self.process else None,
             "argv": self.command,
             "log_path": str(self.log_path),
         }
+
+    def metrics(self) -> str | None:
+        endpoint = self.base_url.removesuffix("/v1") + "/metrics"
+        try:
+            with urllib.request.urlopen(endpoint, timeout=2) as response:
+                return response.read().decode("utf-8")
+        except OSError:
+            return None
 
     def close(self) -> None:
         try:

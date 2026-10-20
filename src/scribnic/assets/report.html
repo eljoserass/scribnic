@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scribnic · ${workflow}</title>
+<style>${styles}</style>
+<main>
+  <header>
+    <div class="eyebrow">SCRIBNIC / REGISTRO LOCAL</div>
+    <h1>De la conversación<br>a la nota.</h1>
+    <span class="pill">${status}</span>
+    <p class="muted">${workflow} · ${started_at}</p>
+    <p class="identifier">Ejecución ${run_id} · Traza ${trace_id}</p>
+  </header>
+  <div class="metrics">${cards}</div>
+  ${error}
+  <div class="columns">
+    <section>
+      <div class="eyebrow">GENERACIÓN / BORRADOR</div>
+      <h2>Nota clínica</h2>
+      <pre class="note">${note}</pre>
+    </section>
+    <section>
+      <div class="eyebrow">CONTENIDO / ENTRADA</div>
+      <h2>Transcripción</h2>
+      ${audio}
+      ${transcript}
+    </section>
+  </div>
+  <section class="details">
+    <h2>Etapas</h2>
+    <div class="table"><table>
+      <thead><tr><th>Etapa</th><th>Tiempo</th><th>Prefill</th><th>Decode</th></tr></thead>
+      <tbody>${steps}</tbody>
+    </table></div>
+    <p class="muted">El tiempo total incluye preparación y persistencia. Las tasas son del motor cuando están disponibles.</p>
+  </section>
+  <section class="details">
+    <h2>Recursos observados</h2>
+    <div class="table"><table>
+      <thead><tr><th>Proceso</th><th>Pico RSS muestreado</th><th>CPU media</th></tr></thead>
+      <tbody>${resources}</tbody>
+    </table></div>
+    <p class="muted">CPU expresada en cores equivalentes. El muestreo puede omitir picos breves. Los recursos de servidores remotos quedan fuera de este proceso.</p>
+  </section>
+  <details>
+    <summary>Configuración efectiva y procedencia</summary>
+    <pre>${configuration}</pre>
+  </details>
+  <footer>${links}</footer>
+</main>
+</html>

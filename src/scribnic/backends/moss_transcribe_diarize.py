@@ -7,6 +7,8 @@ from time import perf_counter
 from ..artifacts import Artifact, AudioFile, DiarizedTranscript, SpeakerSegment, StepOutput
 from ..config import StepConfig
 from ..downloads import PreparedStep
+from ..observability import tracer
+from ..profiling import torch_profile
 
 SEGMENT = re.compile(
     r"\[(\d+(?:\.\d+)?)\]\[S(\d+)\](.*?)\[(\d+(?:\.\d+)?)\]", re.DOTALL
@@ -103,8 +105,32 @@ class MossTranscribeDiarize:
     def run(self, source: Artifact) -> StepOutput:
         if not isinstance(source, AudioFile) or source.duration is None:
             raise ValueError("MOSS needs a validated WAV audio artifact.")
-        load_seconds = self._load()
-        inputs = self._inputs(source)
+        with tracer().start_as_current_span("scribnic.moss.load"):
+            load_seconds = self._load()
+        with torch_profile(self.model, self.torch, self.device) as profile:
+            text, prompt_length, generated_tokens = self._generate(source)
+        transcript = parse_transcript(text)
+        for segment in transcript.segments:
+            if segment.end > source.duration + 0.1:
+                raise ValueError("MOSS returned a timestamp beyond the audio duration.")
+        metadata = {
+            "repository": self.step.model.repository,
+            "revision": self.step.model.revision,
+            "device": str(self.device),
+            "dtype": str(self.model.dtype),
+            "load_seconds": load_seconds,
+            "prompt_tokens": prompt_length,
+            "generated_tokens": generated_tokens,
+            "profile": profile,
+        }
+        if self.device.type == "cuda":
+            metadata["peak_gpu_allocated_bytes"] = self.torch.cuda.max_memory_allocated(self.device)
+            metadata["peak_gpu_reserved_bytes"] = self.torch.cuda.max_memory_reserved(self.device)
+        return StepOutput(transcript, metadata)
+
+    def _generate(self, source: AudioFile) -> tuple[str, int, int]:
+        with self.torch.profiler.record_function("moss.frontend"):
+            inputs = self._inputs(source)
         prompt_length = int(inputs["attention_mask"][0].sum().item())
         settings = self.step.model.settings
         maximum = int(settings.get("max_tokens", 16384))
@@ -118,19 +144,10 @@ class MossTranscribeDiarize:
         text = self.processor.tokenizer.decode(
             output[0][prompt_length:], skip_special_tokens=True
         ).strip()
-        transcript = parse_transcript(text)
-        for segment in transcript.segments:
-            if segment.end > source.duration + 0.1:
-                raise ValueError("MOSS returned a timestamp beyond the audio duration.")
-        return StepOutput(transcript, {
-            "repository": self.step.model.repository,
-            "revision": self.step.model.revision,
-            "device": str(self.device),
-            "dtype": str(self.model.dtype),
-            "load_seconds": load_seconds,
-            "prompt_tokens": prompt_length,
-            "generated_tokens": int(output.shape[1] - prompt_length),
-        })
+        return text, prompt_length, int(output.shape[1] - prompt_length)
+
+    def process_ids(self) -> tuple[int, ...]:
+        return ()
 
     def close(self) -> None:
         self.model = None

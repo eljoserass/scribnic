@@ -86,8 +86,13 @@ session starts the cached Prism server, generates through the new HTTP adapter,
 preserves native timings, and closes its process. Sampling uses Prism's published
 small-model non-thinking profile. The short synthetic note still has semantic and
 formatting mistakes; execution success is not a quality assessment.
-- [ ] Add OTel file export, resources, optional Torch profiling, persistence,
+- [x] Add OTel file export, resources, optional Torch profiling, persistence,
       partial-failure recovery, and a standalone HTML report; commit/push.
+
+Observability checkpoint: local OTLP traces/metrics/logs export successfully in a
+clean installation without Torch. Recovery tests verify that a failed note keeps
+the diarized transcript and an error report. Process sampling covers Scribnic and
+owned local runtimes; remote service resources require service-side telemetry.
 - [ ] Replace the CLI with a thin workflow interface; remove discarded NeMo,
       Nemotron, Qwen-ASR, and VibeVoice paths and obsolete scripts/tests.
 - [ ] Separate portable client dependencies, optional MOSS dependencies, and dev

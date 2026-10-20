@@ -56,3 +56,6 @@ class DemoBackend:
 
     def close(self) -> None:
         pass
+
+    def process_ids(self) -> tuple[int, ...]:
+        return ()

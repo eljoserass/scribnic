@@ -111,9 +111,15 @@ class HTTPGeneration:
             "usage": response.usage.model_dump() if response.usage else None,
             "timings": response.model_extra.get("timings"),
             "load_seconds": self.load_seconds,
+            "server_metrics": self.server.metrics() if self.server else None,
         }
         self.load_seconds = 0.0
         return StepOutput(Note(note), metadata)
+
+    def process_ids(self) -> tuple[int, ...]:
+        if self.server is not None and self.server.process is not None:
+            return (self.server.process.pid,)
+        return ()
 
     @staticmethod
     def _content(response) -> str:

@@ -68,6 +68,9 @@ class FakeBackend:
     def close(self):
         self.closed = True
 
+    def process_ids(self):
+        return ()
+
 
 class WorkflowTests(unittest.TestCase):
     def setUp(self):

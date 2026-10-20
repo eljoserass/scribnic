@@ -136,6 +136,7 @@ class RunResult:
     status: str = "success"
     error: str | None = None
     trace_id: str | None = None
+    resources: dict[str, object] = field(default_factory=dict)
 
     def get(self, kind: ArtifactKind) -> Artifact | None:
         for artifact in reversed(self.artifacts):
