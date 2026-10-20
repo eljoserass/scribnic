@@ -1,0 +1,7 @@
+name = "transformers"
+engine = "transformers"
+
+[settings]
+device = "auto"
+dtype = "auto"
+attention = "sdpa"

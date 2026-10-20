@@ -38,6 +38,7 @@ class StepConfig:
     runtime: RuntimeConfig
     template: Path | None = None
     source: str | None = None
+    instruction: str | None = None
 
 
 @dataclass(frozen=True)
@@ -136,6 +137,7 @@ def _load_step(name: str, data: dict, directory: Path) -> StepConfig:
         ),
         template=template,
         source=data.get("source"),
+        instruction=template.read_text(encoding="utf-8").strip() if template else None,
     )
 
 

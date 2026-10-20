@@ -1,0 +1,4 @@
+name = "demo_note"
+backend = "demo"
+inputs = ["transcript", "diarized_transcript"]
+output = "note"

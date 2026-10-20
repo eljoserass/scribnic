@@ -1,0 +1,9 @@
+name = "http"
+engine = "http"
+
+[settings]
+base_url = "http://localhost:1235/v1"
+base_url_env = "SCRIBNIC_BASE_URL"
+api_key_env = "SCRIBNIC_API_KEY"
+check_models = true
+timeout = 120

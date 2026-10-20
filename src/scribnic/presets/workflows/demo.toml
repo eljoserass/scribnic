@@ -1,0 +1,14 @@
+name = "demo"
+inputs = ["audio", "transcript", "diarized_transcript"]
+default_output = "note"
+download_missing = false
+
+[steps.speech]
+model = "demo_speech"
+runtime = "demo"
+
+[steps.note]
+model = "demo_note"
+runtime = "demo"
+template = "soap_es"
+source = "speech"

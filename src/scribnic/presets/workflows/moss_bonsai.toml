@@ -1,0 +1,14 @@
+name = "moss_bonsai"
+inputs = ["audio", "transcript", "diarized_transcript"]
+default_output = "note"
+download_missing = true
+
+[steps.speech]
+model = "moss_transcribe_diarize"
+runtime = "transformers"
+
+[steps.note]
+model = "bonsai_2_2b"
+runtime = "llama_cpp"
+template = "soap_es"
+source = "speech"

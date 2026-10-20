@@ -1,6 +1,7 @@
 """Public reusable workflow sessions, independent of CLI and evaluation tools."""
 
 from datetime import datetime, timezone
+from contextlib import ExitStack
 from pathlib import Path
 from time import perf_counter
 from typing import Callable, Protocol
@@ -41,12 +42,25 @@ class WorkflowSession:
         config: WorkflowConfig,
         *,
         backend_factory: BackendFactory | None = None,
+        prepare: bool = True,
+        download: bool | None = None,
+        cache: Path | None = None,
     ):
         validate_workflow(config)
         self.config = config
         self._factory = backend_factory
+        from .downloads import ResourceManager
+
+        self._resources = ResourceManager(
+            cache=cache,
+            download=config.download_missing if download is None else download,
+        )
+        self._cleanup = ExitStack()
         self._backends: dict[str, Backend] = {}
         self._closed = False
+        if prepare and backend_factory is None:
+            for step in config.steps:
+                self._resources.prepare(step)
 
     def __enter__(self) -> "WorkflowSession":
         if self._closed:
@@ -57,10 +71,11 @@ class WorkflowSession:
         self.close()
 
     def close(self) -> None:
-        for backend in reversed(tuple(self._backends.values())):
-            backend.close()
-        self._backends.clear()
-        self._closed = True
+        try:
+            self._cleanup.close()
+        finally:
+            self._backends.clear()
+            self._closed = True
 
     def _backend(self, step: StepConfig) -> Backend:
         if step.name not in self._backends:
@@ -68,8 +83,11 @@ class WorkflowSession:
             if factory is None:
                 from .backends import create_backend
 
-                factory = create_backend
-            self._backends[step.name] = factory(step)
+                backend = create_backend(step, self._resources.prepare(step))
+            else:
+                backend = factory(step)
+            self._backends[step.name] = backend
+            self._cleanup.callback(backend.close)
         return self._backends[step.name]
 
     def run(
@@ -94,6 +112,9 @@ class WorkflowSession:
         artifacts = {source.kind: source}
         records = []
         try:
+            # Constructors preflight reachable services; speech weights load in run().
+            for planned in plan:
+                self._backend(planned.step)
             for planned in plan:
                 step_started = perf_counter()
                 backend = self._backend(planned.step)
@@ -140,6 +161,12 @@ def open_workflow(
     workflow: str | Path | WorkflowConfig,
     *,
     backend_factory: BackendFactory | None = None,
+    prepare: bool = True,
+    download: bool | None = None,
+    cache: Path | None = None,
 ) -> WorkflowSession:
     """Load a required workflow; run defaults to its configured note output."""
-    return WorkflowSession(load_workflow(workflow), backend_factory=backend_factory)
+    return WorkflowSession(
+        load_workflow(workflow), backend_factory=backend_factory,
+        prepare=prepare, download=download, cache=cache,
+    )

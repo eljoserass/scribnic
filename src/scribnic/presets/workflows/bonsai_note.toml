@@ -1,0 +1,9 @@
+name = "bonsai_note"
+inputs = ["transcript", "diarized_transcript"]
+default_output = "note"
+download_missing = true
+
+[steps.note]
+model = "bonsai_2_2b"
+runtime = "llama_cpp"
+template = "soap_es"

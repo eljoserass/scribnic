@@ -78,8 +78,14 @@ Core checkpoint: 31 tests pass, including the 19-test baseline; 3 live checks ar
 opt-in. Tests demonstrate speech is neither constructed nor called for supplied
 text, loaded backend reuse does not leak artifacts, and removing speakers keeps
 the original unchanged.
-- [ ] Port MOSS and generic HTTP generation; add versioned local llama-server
+- [x] Port MOSS and generic HTTP generation; add versioned local llama-server
       preparation/lifecycle and model sampling presets; commit/push.
+
+Backend checkpoint: 39 tests pass (3 live checks opt-in). A real `bonsai_note`
+session starts the cached Prism server, generates through the new HTTP adapter,
+preserves native timings, and closes its process. Sampling uses Prism's published
+small-model non-thinking profile. The short synthetic note still has semantic and
+formatting mistakes; execution success is not a quality assessment.
 - [ ] Add OTel file export, resources, optional Torch profiling, persistence,
       partial-failure recovery, and a standalone HTML report; commit/push.
 - [ ] Replace the CLI with a thin workflow interface; remove discarded NeMo,
