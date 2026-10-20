@@ -1,159 +1,293 @@
-# scribnic
+# Scribnic
 
-Pipeline local para transcribir un audio, separar hablantes y, opcionalmente, generar texto con LM Studio. Los modelos por defecto son [Nemotron 3 Diarization](https://huggingface.co/nvidia/Nemotron-3-Diarization) y [Nemotron 3.5 ASR Streaming](https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b). El idioma por defecto es `es-ES`.
+Núcleo local de escriba clínico: un workflow declara cómo llegar de una entrada a
+una nota. La misma API sirve para Python, CLI y un futuro evaluador o servidor.
+Actualmente incluye MOSS-Transcribe-Diarize, Bonsai mediante HTTP y una demo sin
+modelos. NeMo, Nemotron, Qwen-ASR y VibeVoice se han retirado.
 
-## Prueba MOSS → Bonsai → SOAP en español
+## Instalar y ejecutar
 
-En LM Studio, carga **Ternary Bonsai 2 2B** (`prism-ml/Ternary-Bonsai-2-2B-gguf`, Q2_0), configura al menos 8192 tokens de contexto, desactiva *Thinking* y arranca el servidor. El adaptador pide `reasoning_effort=none` y `enable_thinking=false`; desactívalo en la aplicación si tu versión del servidor no respeta esos parámetros. [La ficha del modelo](https://huggingface.co/prism-ml/Ternary-Bonsai-2-2B-gguf) documenta formatos y ejecución.
-
-Desde WSL, comprueba primero la conexión. Si LM Studio está en Windows y `localhost` no funciona, utiliza la IP de Windows; la puerta de enlace de `ip route show default` puede servir en una instalación WSL con NAT:
-
-```bash
-export LM_STUDIO_BASE_URL=http://IP_DE_WINDOWS:1234/v1
-curl "$LM_STUDIO_BASE_URL/models"
-```
-
-Si la conexión requiere acceso desde WSL, activa **Serve on Local Network** en LM Studio. Si el servidor exige autenticación, exporta `LM_STUDIO_API_KEY`. `--base-url` permite sustituir la variable de entorno en cada ejecución.
-
-Con el servidor accesible:
+Python 3.12 o posterior y [uv](https://docs.astral.sh/uv/). Desde este repositorio:
 
 ```bash
-uv run scribnic data/examples/dialogue8.wav --soap
+uv sync --locked --extra moss
+uv run --extra moss scribnic prepare --workflow moss_bonsai
+uv run --extra moss scribnic run consulta.wav --workflow moss_bonsai
 ```
 
-En la configuración local comprobada, el servidor de Windows responde desde WSL en `http://localhost:1235/v1`:
+Abre el `report.html` de la ruta impresa. Es un HTML local con nota, transcripción,
+audio, tiempos, consumo de recursos y configuración efectiva. El audio se enlaza
+en su ubicación original; no se copia dentro del informe.
+
+`prepare` comprueba la caché y descarga lo que falta. No carga pesos en memoria.
+`run` genera una nota por defecto. MOSS produce directamente la transcripción
+con hablantes; Bonsai recibe esa conversación y genera SOAP breve en español,
+en texto libre. Los prompts permiten interpretar quién habla como médico o
+paciente por el contenido; el número del hablante no determina su rol.
+
+Los modelos y binarios tienen revisiones fijadas. El workflow local descarga
+Bonsai PQ2_0 y el `llama-server` compatible del fork de Prism, verifica sus hashes,
+lo inicia en loopback y lo cierra al salir. No requiere LM Studio ni bindings
+Python de llama.cpp. MOSS usa el checkpoint de Hugging Face, incluido su código
+Python fijado por revisión (`trust_remote_code=True`).
+
+La instalación base evita Torch y Transformers:
 
 ```bash
-uv run scribnic data/examples/dialogue8.wav --soap --base-url http://localhost:1235/v1
+uv sync --locked
+uv run scribnic run conversacion.txt --workflow demo
+uv run scribnic run conversacion.txt --workflow bonsai_note
 ```
 
-`--soap` selecciona MOSS para transcripción y diarización, busca **solo** Ternary Bonsai 2 2B entre los modelos del servidor y solicita una nota breve con los apartados Subjetivo, Objetivo, Análisis y Plan, en español y texto libre. Las etiquetas de hablante siguen siendo anónimas. Si hay varias variantes de Bonsai 2 2B, selecciona el identificador exacto devuelto por `/models`:
+`demo` produce salidas **inventadas**, identificadas en terminal e informe.
+`bonsai_note` ejecuta Bonsai real sin instalar MOSS. Para instalar un wheel como
+cliente: `pip install scribnic-0.1.0-py3-none-any.whl`, o añade `[moss]` para voz.
+Ruff está en el grupo de desarrollo; `uv sync --no-dev` lo excluye.
+
+El WAV debe ser PCM16, mono, 16 kHz. Si necesitas convertirlo:
 
 ```bash
-uv run scribnic data/examples/dialogue8.wav --soap \
-  --llm-model prism-ml/ternary-bonsai-2-2b
+ffmpeg -i entrada.mp3 -ac 1 -ar 16000 -c:a pcm_s16le consulta.wav
 ```
 
-La terminal muestra el inicio y tiempo de cada etapa, la transcripción con hablantes y la nota. Al terminar, abre el `report.html` de la ruta impresa: incluye nota, transcripción, reproductor del audio original, tiempos e instrucción del generador. No necesita un servidor web ni recursos externos. Los archivos quedan en un directorio nuevo de `runs/`:
+## Workflows y CLI
+
+| Workflow | Voz | Nota |
+| --- | --- | --- |
+| `moss_bonsai` | MOSS / Transformers | Bonsai / llama-server gestionado |
+| `moss_bonsai_http` | MOSS / Transformers | Bonsai / endpoint existente |
+| `bonsai_note` | Entrada de texto | Bonsai / llama-server gestionado |
+| `demo` | Salidas inventadas | Salida inventada |
+
+Para tu LM Studio en Windows:
+
+```bash
+export SCRIBNIC_BASE_URL=http://localhost:1235/v1
+uv run --extra moss scribnic run consulta.wav --workflow moss_bonsai_http
+```
+
+El ID esperado es `ternary-bonsai-2-2b`. Se puede cambiar mediante
+`model_settings.served_model` en el workflow. El endpoint también acepta
+`SCRIBNIC_API_KEY`. En WSL con NAT puede hacer falta la IP de Windows y habilitar
+el acceso de red en LM Studio.
+
+```bash
+# Parar antes de generar la nota.
+uv run --extra moss scribnic run consulta.wav --workflow moss_bonsai \
+  --output diarized_transcript --output-dir runs/solo-voz
+
+# Reutilizar una transcripción guardada, sin ejecutar MOSS.
+uv run scribnic run runs/solo-voz/diarized_transcript.json \
+  --workflow bonsai_note --output-dir runs/solo-nota
+
+# Un único documento JSON en stdout; progreso y diagnóstico en stderr.
+uv run scribnic run conversacion.txt --workflow bonsai_note --format json
+```
+
+Las otras opciones de `run` son `--offline` (ninguna descarga de recursos) y
+`--profile` (traza detallada de Torch además de telemetría normal). Los modelos,
+dispositivos, prompts, límites y sampling se configuran en TOML.
+`--offline` permite llamar a un endpoint HTTP configurado; no es un bloqueo de red.
+
+Puedes seleccionar un preset, archivo o carpeta con `--workflow`. Una carpeta
+usa `default.toml` o su único TOML; si hay varios, exige elegir uno.
+Un workflow personalizado puede reutilizar presets y sobrescribir ajustes:
+
+```toml
+name = "mi_consulta"
+inputs = ["audio", "transcript", "diarized_transcript"]
+default_output = "note"
+
+[steps.speech]
+model = "moss_transcribe_diarize"
+runtime = "transformers"
+
+[steps.speech.runtime_settings]
+device = "cpu"
+
+[steps.note]
+model = "bonsai_2_2b"
+runtime = "llama_cpp"
+template = "soap_es" # También puede ser un archivo Markdown relativo al workflow.
+source = "speech"
+
+[steps.note.model_settings]
+max_tokens = 768
+temperature = 0.7
+```
+
+Cada paso declara, mediante su preset de modelo, las entradas que acepta y una
+salida. El resolver sigue los productores configurados, detecta ciclos y
+ambigüedades y respeta una entrada ya suministrada. Cada paso consume un artefacto;
+no hay un motor genérico de tareas paralelas o combinaciones de múltiples entradas.
+MOSS declara `audio → diarized_transcript`; no se crea otro transcript por debajo.
+
+El preset de Bonsai conserva el [perfil publicado para modelos pequeños de Prism](https://github.com/PrismML-Eng/Bonsai-demo/blob/main/SMALL-MODELS.md):
+`temperature=0.7`, `top_p=0.8`, `top_k=20`, `min_p=0`,
+`presence_penalty=1.5`, repetición `1.0`/ventana `64`, thinking desactivado.
+El contexto de llama-server es 8192. El límite preventivo de 12000 caracteres
+no mide tokens; las entradas largas se rechazan sin truncar. No hay resumen por
+fragmentos todavía. Una salida cortada por límite de tokens tampoco se acepta.
+
+## API Python y futuros evals
+
+```python
+from scribnic import AudioFile, Transcript, open_workflow, save_artifact
+
+with open_workflow("moss_bonsai") as scribe:
+    result = scribe.run(AudioFile("consulta.wav"))
+    print(result.note.text)
+
+    speech = scribe.run(AudioFile("consulta.wav"), output="diarized_transcript")
+    modified = speech.transcript.without_speakers()
+    save_artifact(modified, "sin_hablantes.json")
+    ablation = scribe.run(modified)
+
+    manual = scribe.run(Transcript.from_text("Paciente: me duele la cabeza."))
+```
+
+Una sesión conserva modelos cargados, pero cada ejecución tiene sus propios
+artefactos. `without_speakers()` elimina etiquetas y roles conservando texto,
+turnos y tiempos; no cambia el original. También puedes construir nuevos
+`TextSegment`/`SpeakerSegment` desde fuera para perturbaciones. Los tiempos y roles
+pueden ser desconocidos: no se inventan. Las etiquetas identifican voces y son
+independientes de los roles clínicos opcionales.
+
+`open_workflow` prepara los recursos del workflow completo por defecto.
+`prepare=False` permite preparar únicamente los pasos que llegue a usar `run`;
+los modelos se cargan en memoria al ejecutarlos. `download=False` exige caché.
+Cada sesión serializa sus llamadas a `run`; un harness puede administrar sus
+propios procesos/sesiones según los recursos disponibles.
+
+```python
+from scribnic import load_artifact, open_workflow
+from scribnic.observability import Telemetry
+
+with Telemetry("runs/python/telemetry"):
+    with open_workflow("bonsai_note") as scribe:
+        result = scribe.run(
+            load_artifact("sin_hablantes.json"), output_dir="runs/python"
+        )
+```
+
+La biblioteca no configura el SDK global de la aplicación que la incorpora.
+`Telemetry` es un contexto opcional de exportación local. También se puede usar
+el proveedor OpenTelemetry configurado por el servidor/harness. El adaptador de
+alto nivel `scribnic.application.execute` configura persistencia y exportación
+local igual que la CLI; la lógica de inferencia vive en `WorkflowSession`.
+
+`load_artifact` admite JSON versionado de Scribnic, texto plano y transcripciones
+con `segments` al estilo OpenAI (`speaker`, `start`, `end`, `text`), además de los
+antiguos `utterances`. El harness futuro `scribe_eval` podrá pasar estos artefactos,
+guardar predicciones y puntuarlas por separado; datasets, perturbaciones y jueces
+no forman parte de este núcleo.
+
+## Resultados y observabilidad
+
+Cada etapa se guarda antes de empezar la siguiente. Si falla, se lanza
+`WorkflowRunError` con `.result` parcial; los archivos guardados indican `error`.
+Si se interrumpe Python se intenta guardar `interrupted`. Tras una terminación
+externa abrupta, el último checkpoint puede seguir indicando `running`.
 
 | Archivo | Contenido |
 | --- | --- |
-| `transcript.json` | Resultado de voz, guardado **antes** de llamar al generador. |
-| `note.txt` | Texto libre de la nota, si termina la generación. |
-| `result.json` | Resultado completo, si termina el pipeline. |
-| `run.json` | Modelos, dispositivo, límites, instrucción, tiempos y estado/error. |
-| `report.html` | Informe visual local; enlaza al audio original. |
+| `audio.json`, `diarized_transcript.json`, `transcript.json` | Solo los artefactos realmente disponibles, con tipo y versión. |
+| `note.json`, `note.txt` | Nota terminada. |
+| `result.json` | Resultado completo o parcial, configuración, procedencia y métricas. |
+| `run.json` | Metadatos sin repetir la lista de artefactos. |
+| `report.html` | Vista local, sin servidor ni recursos web externos. |
+| `telemetry/*.jsonl` | Trazas, métricas y logs en formato OTLP JSONL real. |
+| `note-metrics.prom` | Métricas nativas de llama-server, cuando están disponibles. |
+| `profiles/moss-torch-trace.json` | Traza opcional de operadores para Perfetto/Chrome. |
 
-Puedes elegir un directorio vacío con `--output-dir runs/mi-prueba`, obtener JSON en stdout con `--format json`, o cambiar la instrucción con `--instruction '...'`. `--soap --skip-generation` prueba solo MOSS. `--soap --demo` muestra el recorrido y el informe con **salidas inventadas**, sin ejecutar ningún modelo.
+Se muestrean RSS, tiempo de CPU y cores equivalentes de Scribnic y los runtimes
+locales que posee. Se conserva el pico de memoria asignada/reservada por Torch en
+CUDA/ROCm y los tiempos nativos de prefill/decode de llama-server. El RSS no equivale
+a memoria GPU; los picos muestreados pueden omitir transitorios. Los procesos
+remotos necesitan instrumentación propia. Estas medidas describen una ejecución,
+no bastan por sí solas para fijar requisitos mínimos de un PC.
 
-Esta primera prueba envía la conversación completa en una sola petición: límite de 12000 caracteres de diálogo y 768 tokens de salida. Los caracteres son un límite preventivo, no una medición del contexto en tokens. Una entrada demasiado larga se rechaza sin truncarla; ajusta `--llm-max-input-chars` y `--llm-max-tokens` según el contexto cargado en LM Studio. Si el servidor falla o corta la nota al alcanzar su límite, el comando falla y conserva la transcripción y el informe. Todavía no hay resumen por fragmentos para conversaciones largas.
+`--profile` es para investigación y añade overhead. Etiqueta frontend, encoder,
+adaptor, prefill y decode de MOSS; por defecto captura operadores de CPU. Para
+solicitar también actividad GPU usa `profile_gpu = true` en
+`steps.speech.runtime_settings`. En MPS emite signposts para Instruments; no promete
+una línea temporal de kernels Metal en la traza JSON. Empieza con audio corto:
+las trazas detalladas pueden consumir mucha memoria. El profiler de Torch no ve
+los kernels del proceso llama-server, que tiene sus propias métricas y log.
 
-## Estado de la arquitectura
+## Plataformas y validación
 
-Es un prototipo local ejecutable: usa modelos reales, valida el audio y los intervalos, y tiene pruebas de contratos y pruebas reales opcionales. No es todavía un servicio de producción ni garantiza la exactitud de una nota. `ARCHITECTURE_EVALUATION.md` contiene una propuesta de evolución, no una migración implementada.
+El lock usa Torch CPU en Linux/Windows y el wheel habitual en macOS. No instala
+ROCm ni CUDA como parte de la instalación portable. Para un entorno GPU preparado,
+instala Scribnic y las dependencias compatibles sin sustituir el Torch específico
+de ese entorno; evita `uv sync` sobre una `.venv` de aceleración personalizada.
+
+MOSS selecciona CUDA/ROCm si el Torch instalado lo detecta y CPU en los demás
+casos. MPS requiere selección explícita (`device = "mps"`) y no se ha validado.
+En una Mac Studio, Bonsai elige el binario arm64/Metal; MOSS empieza en CPU.
+En Windows se empaqueta el servidor CPU x64. Los hashes y rutas de los archivos
+de Mac/Windows se comprobaron; la inferencia en esas plataformas queda pendiente.
+
+En el stack AMD/WSL local apareció `miopenStatusUnknownError` en las convoluciones
+de Whisper. Existe el ajuste explícito `cudnn_enabled = false` para usar las
+convoluciones nativas durante la generación y restaurar después el estado de
+PyTorch. El intento GPU con profiling quedó incompleto tras reiniciarse WSL;
+no se considera validado. CPU es la ruta de referencia de este refactor.
+
+## Navegar y desarrollar
+
+Validación real del refactor (20 de octubre de 2026): un WAV de 35 s completó
+MOSS → Bonsai en CPU en 108,68 s, con 13 segmentos y dos hablantes. Voz: 100,40 s;
+nota: 4,61 s. Picos RSS muestreados por separado: 5,18 GiB en Python y 1,25 GiB en
+llama-server. La reutilización de una transcripción guardada sin hablantes ejecutó
+solo la nota. Los informes locales y las versiones verificadas están registrados
+en [REFACTOR_PLAN.md](REFACTOR_PLAN.md). Se observaron errores de transcripción,
+contenido mal ubicado en SOAP e inferencias y repeticiones de Bonsai; esta prueba
+confirma ejecución, no calidad clínica.
 
 ```text
-WAV → MOSS (transcripción + diarización) → turnos con hablante → LM Studio → nota
-    o diarizador → ASR → atribución de hablantes ────────────┘
+src/scribnic/
+  artifacts.py                Datos pasivos: audio, texto, hablantes, nota, resultado
+  config.py / planning.py     Cargar configuración y resolver productores
+  workflow.py                 Sesión, ejecución y propiedad de los backends
+  audio.py / notes.py          Validar WAV y formatear la entrada de la nota
+  downloads.py / runtimes.py   Caché versionada y ciclo de vida de llama-server
+  backends/                   MOSS, generación HTTP y demo
+  observability.py             SDK/exportadores locales opcionales
+  resources.py / profiling.py  Muestreo de procesos y trazas detalladas
+  storage.py / reporting.py    Checkpoints JSON, terminal e informe HTML
+  application.py / cli.py      Aplicación de archivos y adaptador de argumentos
+  presets/                    Modelos, runtimes, workflows y templates
+  assets/                     HTML y CSS del informe
 ```
 
-`Pipeline` acepta un reconocedor conjunto **o** un par diarizador/transcriptor, y un generador opcional. En modelos conjuntos, los campos `transcription` y `diarization` se derivan de sus turnos. El código se reutiliza desde Python; actualmente no hay API HTTP, cola de trabajos, entrada de audio en streaming ni aplicación con interfaz gráfica. Las dependencias están fijadas para Linux x86-64, Python 3.12 y esta configuración ROCm.
-
-Validación local del 19 de octubre de 2026: la consulta de `data/examples/dialogue8.wav` (297,9 s) completó MOSS → Ternary Bonsai 2 2B Q2_0 en unos 122 s, con 81 segmentos y dos etiquetas de hablante; la nota tardó 2,4 s. Se observaron errores de palabras y cambios incorrectos de hablante en MOSS. Bonsai produjo los cuatro apartados, pero omitió detalles del plan y añadió un «No consta» sobrante. Esta prueba confirma la ejecución, no la fiabilidad clínica. El resultado local está en `runs/soap-bonsai-moss/` (excluido de Git).
-
-## Uso
-
-Requiere Python 3.12, Linux x86-64 y el entorno ROCm indicado en `pyproject.toml`. Desde la raíz:
+```mermaid
+flowchart LR
+    CLI[cli.py] --> APP[application.py]
+    APP --> CORE[workflow.py]
+    PY[Python / futuro scribe_eval] --> CORE
+    CFG[config.py + presets] --> PLAN[planning.py]
+    PLAN --> CORE
+    WAV[AudioFile] --> MOSS[backends/moss_transcribe_diarize.py]
+    MOSS --> DT[DiarizedTranscript]
+    TXT[Transcript suministrado] --> GEN[backends/http_generation.py]
+    DT --> GEN
+    GEN --> NOTE[Note]
+    CORE -. ejecuta pasos .-> MOSS
+    CORE -. ejecuta pasos .-> GEN
+    CORE --> STORE[storage.py + reporting.py]
+    CORE -. spans / recursos .-> OTEL[observability.py + resources.py]
+```
 
 ```bash
-uv sync
-uv run scribnic entrada.wav
-uv run scribnic entrada.wav --llm-model ID_EN_LM_STUDIO
-uv run scribnic entrada.wav --device cpu
-uv run scribnic entrada.wav --device cuda:0
-uv run scribnic entrada.wav --model moss
-uv run scribnic entrada.wav --model vibevoice
-```
-
-El comando imprime JSON con `transcription`, `diarization`, `utterances` y `generated_text`. Sin `--llm-model`, `generated_text` es `null`. Para probar el flujo sin descargar pesos ni llamar a LM Studio:
-
-```bash
-uv run scribnic entrada.wav --demo
-```
-
-El audio de entrada debe ser WAV PCM16, mono, 16 kHz. Por ejemplo:
-
-```bash
-ffmpeg -i entrada.mp3 -ac 1 -ar 16000 -c:a pcm_s16le entrada.wav
-uv run scribnic entrada.wav
-```
-
-Para usar los modelos anteriores:
-
-```bash
-uv run scribnic entrada.wav --asr canary --diarizer sortformer
-```
-
-`--model moss` usa MOSS-Transcribe-Diarize para transcripción y diarización en una sola pasada; no ejecuta `--asr` ni `--diarizer`. Mantiene las marcas temporales y etiquetas de hablante que devuelve el modelo. MOSS carga código remoto de su repositorio de Hugging Face (`trust_remote_code=True`); úsalo solo si confías en ese checkpoint.
-
-Qwen3-ASR-0.6B-hf transcribe, pero no devuelve etiquetas de hablante ni tiempos por sí solo. Se puede combinar con un diarizador:
-
-```bash
-uv run scribnic entrada.wav --asr qwen --diarizer nemotron
-```
-
-El adaptador de Qwen procesa regiones de hasta 30 segundos y les asigna esos tiempos aproximados. La calidad de la atribución de hablantes depende del diarizador elegido.
-
-`--model vibevoice` utiliza `microsoft/VibeVoice-ASR-HF`, la versión **no streaming** compatible con la versión de Transformers fijada en este proyecto. A diferencia del checkpoint `VibeVoice-ASR-Streaming-7B` del experimento local, devuelve transcripción, hablante y tiempos de cada segmento. Es un modelo grande y requiere mucha memoria de GPU o RAM; su primera ejecución descarga los pesos. El checkpoint streaming requiere el paquete externo `vibevoice` con Transformers 4.x, incompatible con el Transformers 5.x que usan los otros modelos aquí.
-
-Para limitar la concurrencia de las descargas, descarga primero el checkpoint con un solo archivo y una sola solicitud Xet a la vez; después ejecuta sin acceso al Hub:
-
-```bash
-HF_XET_NUM_CONCURRENT_RANGE_GETS=1 uv run hf download microsoft/VibeVoice-ASR-HF --max-workers 1
-HF_HUB_OFFLINE=1 uv run scribnic entrada.wav --model vibevoice
-```
-
-Esto reduce la concurrencia, pero no garantiza un límite exacto de MB/s. En una GPU de 20 GB y 11 GB de RAM, VibeVoice necesitó mantener parte del modelo en CPU y la prueba de dos hablantes resultó demasiado lenta para completarla; el adaptador y la carga del modelo sí se verificaron, pero no su salida real en esa máquina.
-
-`--device auto` (por defecto) usa la GPU si PyTorch la detecta y CPU si no. `--device cpu` y `--device cuda:0` eligen el dispositivo para **ambos modelos**; PyTorch llama `cuda:0` a la GPU AMD con ROCm. La inferencia en CPU puede ser lenta. Los pesos se descargan en la primera ejecución real. El modelo nuevo de diarización necesita la versión de Transformers desde Git fijada en `pyproject.toml`, porque la versión publicada anteriormente no reconoce su arquitectura. NeMo, usado por los modelos antiguos, puede necesitar espacio en disco al descomprimirlos; el programa usa `~/.cache/scribnic/tmp` salvo que `TMPDIR` esté definido.
-
-## Estructura
-
-| Ruta | Contenido |
-| --- | --- |
-| `src/scribnic/models.py` | Tipos de datos compartidos, sin dependencias de ML. |
-| `src/scribnic/core.py` | Contratos, atribución de hablantes y pipeline. |
-| `src/scribnic/backends/` | Implementaciones de ASR, diarización, generación y demo. |
-| `src/scribnic/factory.py` | Selección de modelos por defecto u opciones del CLI. |
-| `src/scribnic/cli.py` | Entrada por línea de comandos. |
-| `scripts/` | Experimento anterior de transcripción multitalker. |
-| `data/examples/` | Grabaciones y salidas locales, excluidas de Git. |
-| `pyproject.toml`, `uv.lock` | Dependencias y versiones bloqueadas. |
-
-El mismo `build_pipeline()` sirve para un servicio o para evaluar etapas por separado:
-
-```python
-from pathlib import Path
-from scribnic import FileSource, build_pipeline
-
-pipeline = build_pipeline(device="auto")  # también "cpu" o "cuda:0"
-result = pipeline.run(FileSource(Path("entrada.wav")))
-```
-
-Los tiempos son segundos desde el inicio del archivo. Nemotron 3.5 ASR devuelve texto sin marcas de palabra en la API documentada, así que el adaptador transcribe regiones de diarización y les asigna tiempos aproximados de región. Divide turnos largos cada 30 segundos. Una región con voces simultáneas conserva varios `candidates` y deja `speaker` en `null`. Si el diarizador no detecta hablantes, se transcribe el archivo completo sin atribución. Canary conserva las marcas de palabra del flujo anterior.
-
-Para comprobar los contratos del pipeline sin descargar modelos:
-
-```bash
+uv run ruff check src tests
+uv run ruff format --check src tests
 uv run python -m unittest discover -s tests -v
+uv build
 ```
 
-Para ejecutar las pruebas reales con el audio local de `data/examples/`, define `SCRIBNIC_LIVE_TESTS=1`. VibeVoice se prueba por separado con `SCRIBNIC_LIVE_VIBEVOICE=1` porque descarga un checkpoint grande.
-
-## Experimento multitalker anterior
-
-```bash
-uv run python scripts/build_conversation.py entrada.wav --output salida.json
-```
-
-Este experimento usa los modelos Sortformer v2.1 y Multitalker Parakeet y conserva sus ajustes ROCm. La transcripción de ejemplo en español que se generó localmente no era fiable; el modelo Multitalker Parakeet se evaluó principalmente en inglés.
+Los tests normales usan fakes, sin red, pesos o GPU. Con el extra MOSS también se
+comprueba el profiler en un módulo diminuto de CPU. El test end-to-end real es
+opt-in: `SCRIBNIC_LIVE_TESTS=1`, `SCRIBNIC_TEST_AUDIO=/ruta/consulta.wav` y todos los
+recursos ya preparados. Las convenciones de código están en [AGENTS.md](AGENTS.md)
+y el seguimiento del refactor en [REFACTOR_PLAN.md](REFACTOR_PLAN.md).

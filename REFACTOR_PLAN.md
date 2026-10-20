@@ -104,11 +104,42 @@ obsolete backend tests. Preserved notes and local data. A clean locked MOSS inst
 uses standard CPU Torch on Linux; the original custom ROCm environment is intact.
 Mac/Windows archive hashes and executable layouts were checked; hardware inference
 on those platforms remains untested.
-- [ ] Run unit/style/package checks and a small real MOSS/Bonsai workflow.
-- [ ] Demonstrate saved transcript -> explicit modification -> note generation;
+- [x] Run unit/style/package checks and a small real MOSS/Bonsai workflow.
+- [x] Demonstrate saved transcript -> explicit modification -> note generation;
       inspect note/transcript quality and record actual measurements.
-- [ ] Update this plan and README with results, limitations, and execution commands;
+- [x] Update this plan and README with results, limitations, and execution commands;
       final commit/push.
+
+Final validation on 20 October 2026:
+
+- A clean locked install with MOSS uses Torch 2.14.1+cpu and Transformers 5.20.2.
+  Its suite passes 30 tests; the separate real-model test is opt-in and skipped.
+  The built wheel also passes the base suite without Torch (29 passed, 2 skipped).
+- Ruff lint/format, lock consistency, whitespace checks, wheel and sdist build pass.
+  Packaged presets and HTML/CSS are included. No production source function exceeds
+  the 50-body-line review threshold. User notes remain unchanged from the baseline.
+- Actual CPU run: `runs/refactor-real-20261020-154439/full/report.html`.
+  A 35-second WAV produced 13 diarized segments with 2 speaker IDs and a Spanish
+  note. Total run: 108.68 s; speech: 100.40 s (model loading 6.01 s); note: 4.61 s.
+  Sampled peak RSS: application 5.18 GiB, owned llama-server 1.25 GiB, measured
+  separately. CPU thread setting: 6; system: 24 logical CPUs, 11.56 GiB WSL memory.
+- The saved diarized transcript was explicitly converted, saved, loaded and
+  resubmitted without speaker labels. Only the note step ran (3.37 s), preserving
+  the original. Its report is in the sibling `without-speakers/` directory. The
+  server/prefix cache was reused, so timings are not a controlled comparison.
+- A separate four-second real MOSS run exported a CPU operator trace and report
+  under `runs/refactor-profile-20261020-154812/run/`. The trace includes frontend,
+  encoder, adaptor, prefill and decode labels; it is 213 MiB. Detailed profiling
+  is opt-in and GPU activity requires an additional explicit runtime setting.
+- The first AMD/ROCm GPU run failed with a MIOpen convolution error. A second
+  profiled attempt was incomplete when WSL restarted. Neither GPU performance
+  nor the workaround is considered validated. CPU completed using the portable
+  lock; macOS and Windows inference still need their own hardware checks.
+- Execution succeeds, but quality is not established. MOSS transcribed "valares"
+  for "valores"; Bonsai misplaced content in Objective, inferred unsupported
+  assessment wording and repeated "No consta". Preserve these predictions for
+  the future external evaluator; do not equate the smoke test with clinical
+  accuracy.
 
 ## Dependency and runtime decisions
 
