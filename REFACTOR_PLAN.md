@@ -40,6 +40,7 @@ src/scribnic/
   __init__.py               Public Python API
   artifacts.py              Audio, transcripts, note, run results
   config.py                 TOML configuration and preset discovery
+  planning.py               Producer selection and dependency validation
   workflow.py               Planning, session lifecycle, execution
   audio.py                  WAV validation/loading
   notes.py                  Template loading and conversation formatting
@@ -68,10 +69,15 @@ responsibility becomes hard to follow. Avoid a generic plugin framework.
 
 - [x] Record agreed coding conventions in `AGENTS.md`.
 - [x] Inspect current behavior, dependencies, Git state, and backend boundaries.
-- [ ] Commit/push the plan on `refactor/workflow-core`.
-- [ ] Implement typed artifacts, configuration, planning, and the reusable API.
-- [ ] Test default note output, early stopping, transcript re-entry, isolation,
+- [x] Commit/push the plan on `refactor/workflow-core`.
+- [x] Implement typed artifacts, configuration, planning, and the reusable API.
+- [x] Test default note output, early stopping, transcript re-entry, isolation,
       unsupported outputs, missing producers, ambiguity, and cycles; commit/push.
+
+Core checkpoint: 31 tests pass, including the 19-test baseline; 3 live checks are
+opt-in. Tests demonstrate speech is neither constructed nor called for supplied
+text, loaded backend reuse does not leak artifacts, and removing speakers keeps
+the original unchanged.
 - [ ] Port MOSS and generic HTTP generation; add versioned local llama-server
       preparation/lifecycle and model sampling presets; commit/push.
 - [ ] Add OTel file export, resources, optional Torch profiling, persistence,
