@@ -7,7 +7,6 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
-from pathlib import Path
 from uuid import uuid4
 
 from .config import RuntimeConfig
@@ -29,9 +28,7 @@ def _health(base_url: str) -> bool:
 
 
 class LlamaServer:
-    def __init__(
-        self, runtime: RuntimeConfig, prepared: PreparedStep, alias: str
-    ):
+    def __init__(self, runtime: RuntimeConfig, prepared: PreparedStep, alias: str):
         if prepared.binary is None or prepared.model_path is None:
             raise ValueError("llama-server needs prepared binary and model files.")
         self.runtime = runtime
@@ -50,13 +47,26 @@ class LlamaServer:
             gpu_layers = "all" if platform.system() == "Darwin" else "0"
         return [
             str(self.prepared.binary),
-            "-m", str(self.prepared.model_path),
-            "--host", "127.0.0.1", "--port", str(port),
-            "-c", str(options.get("context_size", 8192)),
-            "-np", "1", "-ngl", str(gpu_layers),
-            "-t", str(options.get("threads", 6)),
-            "-tb", str(options.get("threads_batch", options.get("threads", 6))),
-            "--alias", self.alias, "--metrics", "--perf",
+            "-m",
+            str(self.prepared.model_path),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+            "-c",
+            str(options.get("context_size", 8192)),
+            "-np",
+            "1",
+            "-ngl",
+            str(gpu_layers),
+            "-t",
+            str(options.get("threads", 6)),
+            "-tb",
+            str(options.get("threads_batch", options.get("threads", 6))),
+            "--alias",
+            self.alias,
+            "--metrics",
+            "--perf",
         ]
 
     def start(self) -> str:
@@ -81,7 +91,9 @@ class LlamaServer:
         return self.base_url
 
     def _wait_ready(self) -> None:
-        deadline = time.monotonic() + float(self.runtime.settings.get("startup_timeout", 90))
+        deadline = time.monotonic() + float(
+            self.runtime.settings.get("startup_timeout", 90)
+        )
         endpoint = self.base_url.removesuffix("/v1")
         while time.monotonic() < deadline:
             if self.process.poll() is not None:

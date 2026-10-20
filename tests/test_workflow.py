@@ -30,9 +30,7 @@ from scribnic.config import (
 def configuration() -> WorkflowConfig:
     runtime = RuntimeConfig("fake", "fake")
     speech = ModelConfig("speech", "fake", ("audio",), "diarized_transcript")
-    note = ModelConfig(
-        "note", "fake", ("transcript", "diarized_transcript"), "note"
-    )
+    note = ModelConfig("note", "fake", ("transcript", "diarized_transcript"), "note")
     return WorkflowConfig(
         "example",
         (StepConfig("speech", speech, runtime), StepConfig("note", note, runtime)),
@@ -59,9 +57,9 @@ class FakeBackend:
         if self.fail:
             raise ValueError("Note server unavailable")
         if isinstance(source, AudioFile):
-            transcript = DiarizedTranscript((
-                SpeakerSegment(source.path.name, "S01", 0, 1),
-            ))
+            transcript = DiarizedTranscript(
+                (SpeakerSegment(source.path.name, "S01", 0, 1),)
+            )
             return StepOutput(transcript)
         return StepOutput(Note(source.text))
 
@@ -85,7 +83,9 @@ class WorkflowTests(unittest.TestCase):
     def test_audio_defaults_to_note_and_keeps_intermediate_artifact(self):
         with tempfile.TemporaryDirectory() as directory:
             source = write_audio(Path(directory))
-            with open_workflow(configuration(), backend_factory=self.factory) as session:
+            with open_workflow(
+                configuration(), backend_factory=self.factory
+            ) as session:
                 result = session.run(source)
         self.assertEqual(result.note.text, "sample.wav")
         self.assertIsInstance(result.transcript, DiarizedTranscript)
@@ -94,7 +94,9 @@ class WorkflowTests(unittest.TestCase):
 
     def test_stop_at_speech_then_supply_modified_transcript(self):
         with tempfile.TemporaryDirectory() as directory:
-            with open_workflow(configuration(), backend_factory=self.factory) as session:
+            with open_workflow(
+                configuration(), backend_factory=self.factory
+            ) as session:
                 speech = session.run(
                     write_audio(Path(directory)), output="diarized_transcript"
                 )
@@ -109,7 +111,9 @@ class WorkflowTests(unittest.TestCase):
 
     def test_arbitrary_text_needs_only_note_backend(self):
         with open_workflow(configuration(), backend_factory=self.factory) as session:
-            result = session.run(Transcript.from_text("texto desordenado sin etiquetas"))
+            result = session.run(
+                Transcript.from_text("texto desordenado sin etiquetas")
+            )
         self.assertEqual(result.note.text, "texto desordenado sin etiquetas")
         self.assertEqual([backend.step.name for backend in self.constructed], ["note"])
 

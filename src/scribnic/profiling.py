@@ -4,7 +4,9 @@ from contextlib import ExitStack, contextmanager, nullcontext
 from contextvars import ContextVar
 from pathlib import Path
 
-_directory: ContextVar[Path | None] = ContextVar("scribnic_profile_directory", default=None)
+_directory: ContextVar[Path | None] = ContextVar(
+    "scribnic_profile_directory", default=None
+)
 
 
 @contextmanager
@@ -51,7 +53,7 @@ def _module_ranges(model, torch, stack: ExitStack) -> None:
 
 
 @contextmanager
-def torch_profile(model, torch, device):
+def torch_profile(model, torch, device, *, include_gpu: bool = False):
     directory = _directory.get()
     metadata = {}
     if directory is None:
@@ -59,25 +61,36 @@ def torch_profile(model, torch, device):
         return
     directory.mkdir(parents=True, exist_ok=True)
     activities = [torch.profiler.ProfilerActivity.CPU]
-    if device.type == "cuda":
+    if include_gpu and device.type == "cuda":
         supported = torch.profiler.supported_activities()
         if torch.profiler.ProfilerActivity.CUDA in supported:
             activities.append(torch.profiler.ProfilerActivity.CUDA)
     trace_path = directory / "moss-torch-trace.json"
-    metal = torch.mps.profiler.profile() if device.type == "mps" else nullcontext()
-    with ExitStack() as stack:
-        _module_ranges(model, torch, stack)
-        profiler = stack.enter_context(torch.profiler.profile(
-            activities=activities, record_shapes=True, profile_memory=True
-        ))
-        with metal:
-            yield metadata
-    profiler.export_chrome_trace(str(trace_path))
-    metadata.update({
-        "trace_path": str(trace_path),
-        "format": "chrome_trace",
-        "activities": [activity.name for activity in activities],
-        "scope": "MOSS frontend, encoder, adaptor, prefill and decode",
-    })
-    if device.type == "mps":
-        metadata["metal_capture"] = "Use Instruments to capture the emitted Metal signposts."
+    metal = (
+        torch.mps.profiler.profile()
+        if include_gpu and device.type == "mps"
+        else nullcontext()
+    )
+    profiler = torch.profiler.profile(
+        activities=activities, record_shapes=True, profile_memory=True
+    )
+    try:
+        with ExitStack() as stack:
+            _module_ranges(model, torch, stack)
+            stack.enter_context(profiler)
+            with metal:
+                yield metadata
+    finally:
+        profiler.export_chrome_trace(str(trace_path))
+    metadata.update(
+        {
+            "trace_path": str(trace_path),
+            "format": "chrome_trace",
+            "activities": [activity.name for activity in activities],
+            "scope": "MOSS frontend, encoder, adaptor, prefill and decode",
+        }
+    )
+    if include_gpu and device.type == "mps":
+        metadata["metal_capture"] = (
+            "Use Instruments to capture the emitted Metal signposts."
+        )

@@ -1,6 +1,7 @@
 """Small TOML configuration objects and deterministic preset discovery."""
 
 import json
+import math
 import tomllib
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -45,9 +46,7 @@ class StepConfig:
 class WorkflowConfig:
     name: str
     steps: tuple[StepConfig, ...]
-    inputs: tuple[ArtifactKind, ...] = (
-        "audio", "transcript", "diarized_transcript"
-    )
+    inputs: tuple[ArtifactKind, ...] = ("audio", "transcript", "diarized_transcript")
     default_output: ArtifactKind = "note"
     download_missing: bool = True
 
@@ -59,6 +58,34 @@ def artifact_kind(value: str) -> ArtifactKind:
     if value not in ARTIFACT_KINDS:
         raise ValueError(f"Unknown artifact kind: {value!r}")
     return value
+
+
+def validate_settings(step: StepConfig) -> None:
+    """Reject invalid numeric settings before preparing expensive resources."""
+    positive = (
+        "max_tokens",
+        "max_input_chars",
+        "min_tokens_budget",
+        "tokens_per_second",
+        "context_size",
+        "threads",
+        "threads_batch",
+        "timeout",
+        "startup_timeout",
+    )
+    for settings in (step.model.settings, step.runtime.settings):
+        for key in positive:
+            if key not in settings:
+                continue
+            value = settings[key]
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(f"{step.name}.{key} must be a positive number.")
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError(f"{step.name}.{key} must be a positive number.")
+    for key in ("top_p", "min_p"):
+        value = step.model.settings.get(key, 0)
+        if not isinstance(value, (int, float)) or not 0 <= value <= 1:
+            raise ValueError(f"{step.name}.{key} must be between 0 and 1.")
 
 
 def _read_toml(path: Path) -> dict:
@@ -160,4 +187,6 @@ def load_workflow(path: str | Path | WorkflowConfig) -> WorkflowConfig:
             download_missing=data.get("download_missing", True),
         )
     except (KeyError, TypeError) as error:
-        raise ValueError(f"Invalid workflow configuration in {location}: {error}") from error
+        raise ValueError(
+            f"Invalid workflow configuration in {location}: {error}"
+        ) from error

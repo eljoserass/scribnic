@@ -10,7 +10,14 @@ from time import perf_counter
 from typing import Callable, Protocol
 from uuid import uuid4
 
-from .artifacts import Artifact, ArtifactKind, AudioFile, RunResult, StepOutput, StepRecord
+from .artifacts import (
+    Artifact,
+    ArtifactKind,
+    AudioFile,
+    RunResult,
+    StepOutput,
+    StepRecord,
+)
 from .config import StepConfig, WorkflowConfig, artifact_kind, load_workflow
 from .observability import trace_id, tracer
 from .planning import PlannedStep, resolve_plan, validate_workflow
@@ -43,7 +50,9 @@ class _Execution:
     source: Artifact
     target: ArtifactKind
     run_id: str = field(default_factory=lambda: uuid4().hex)
-    started_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    started_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
     started: float = field(default_factory=perf_counter)
     artifacts: dict[ArtifactKind, Artifact] = field(default_factory=dict)
     records: list[StepRecord] = field(default_factory=list)
@@ -52,18 +61,31 @@ class _Execution:
 
     def snapshot(self, status: str = "running", error: str | None = None) -> RunResult:
         return RunResult(
-            run_id=self.run_id, workflow=self.config.name, requested_output=self.target,
-            source=self.source, artifacts=tuple(self.artifacts.values()),
-            steps=tuple(self.records), configuration=self.config.to_dict(),
-            started_at=self.started_at, elapsed_seconds=perf_counter() - self.started,
-            status=status, error=error, trace_id=self.trace_id, resources=self.resources,
+            run_id=self.run_id,
+            workflow=self.config.name,
+            requested_output=self.target,
+            source=self.source,
+            artifacts=tuple(self.artifacts.values()),
+            steps=tuple(self.records),
+            configuration=self.config.to_dict(),
+            started_at=self.started_at,
+            elapsed_seconds=perf_counter() - self.started,
+            status=status,
+            error=error,
+            trace_id=self.trace_id,
+            resources=self.resources,
         )
 
 
 class WorkflowSession:
     def __init__(
-        self, config: WorkflowConfig, *, backend_factory: BackendFactory | None = None,
-        prepare: bool = True, download: bool | None = None, cache: Path | None = None,
+        self,
+        config: WorkflowConfig,
+        *,
+        backend_factory: BackendFactory | None = None,
+        prepare: bool = True,
+        download: bool | None = None,
+        cache: Path | None = None,
     ):
         from .downloads import ResourceManager
 
@@ -71,7 +93,8 @@ class WorkflowSession:
         self.config = config
         self._factory = backend_factory
         self._resources = ResourceManager(
-            cache=cache, download=config.download_missing if download is None else download
+            cache=cache,
+            download=config.download_missing if download is None else download,
         )
         self._cleanup = ExitStack()
         self._backends: dict[str, Backend] = {}
@@ -116,8 +139,12 @@ class WorkflowSession:
         return tuple(identifiers)
 
     def run(
-        self, source: Artifact, *, output: ArtifactKind | None = None,
-        output_dir: str | Path | None = None, profile: bool = False,
+        self,
+        source: Artifact,
+        *,
+        output: ArtifactKind | None = None,
+        output_dir: str | Path | None = None,
+        profile: bool = False,
     ) -> RunResult:
         """Produce the requested artifact; supplied transcripts bypass speech."""
         with self._lock:
@@ -126,7 +153,9 @@ class WorkflowSession:
             target = artifact_kind(output or self.config.default_output)
             plan = resolve_plan(self.config, source.kind, target)
             if profile and output_dir is None:
-                raise ValueError("Profiling needs an output_dir for its trace artifacts.")
+                raise ValueError(
+                    "Profiling needs an output_dir for its trace artifacts."
+                )
             from .storage import RunStore
 
             store = RunStore(output_dir) if output_dir is not None else None
@@ -137,7 +166,9 @@ class WorkflowSession:
                 "scribnic.input.kind": source.kind,
                 "scribnic.output.kind": target,
             }
-            with tracer().start_as_current_span("scribnic.workflow.run", attributes=attributes):
+            with tracer().start_as_current_span(
+                "scribnic.workflow.run", attributes=attributes
+            ):
                 return self._execute(state, plan, store, profile)
 
     def _execute(self, state: _Execution, plan, store, profile: bool) -> RunResult:
@@ -192,15 +223,25 @@ class WorkflowSession:
                 "scribnic.runtime.engine": planned.step.runtime.engine,
             }
             started = perf_counter()
-            with tracer().start_as_current_span("scribnic.step.run", attributes=attributes):
-                produced = self._backend(planned.step).run(state.artifacts[planned.input_kind])
+            with tracer().start_as_current_span(
+                "scribnic.step.run", attributes=attributes
+            ):
+                produced = self._backend(planned.step).run(
+                    state.artifacts[planned.input_kind]
+                )
                 if produced.artifact.kind != planned.step.model.output:
-                    raise ValueError(f"Backend {planned.step.name!r} returned the wrong artifact.")
+                    raise ValueError(
+                        f"Backend {planned.step.name!r} returned the wrong artifact."
+                    )
             state.artifacts[produced.artifact.kind] = produced.artifact
-            state.records.append(StepRecord(
-                planned.step.name, planned.step.model.backend,
-                perf_counter() - started, produced.metadata,
-            ))
+            state.records.append(
+                StepRecord(
+                    planned.step.name,
+                    planned.step.model.backend,
+                    perf_counter() - started,
+                    produced.metadata,
+                )
+            )
             if store is not None:
                 store.save(state.snapshot())
 
@@ -215,11 +256,18 @@ class WorkflowSession:
 
 
 def open_workflow(
-    workflow: str | Path | WorkflowConfig, *, backend_factory: BackendFactory | None = None,
-    prepare: bool = True, download: bool | None = None, cache: Path | None = None,
+    workflow: str | Path | WorkflowConfig,
+    *,
+    backend_factory: BackendFactory | None = None,
+    prepare: bool = True,
+    download: bool | None = None,
+    cache: Path | None = None,
 ) -> WorkflowSession:
     """Select a workflow and prepare cached resources without loading model weights."""
     return WorkflowSession(
-        load_workflow(workflow), backend_factory=backend_factory,
-        prepare=prepare, download=download, cache=cache,
+        load_workflow(workflow),
+        backend_factory=backend_factory,
+        prepare=prepare,
+        download=download,
+        cache=cache,
     )

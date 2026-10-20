@@ -22,4 +22,4 @@ binary = "llama-prism-b10787-73bfe6c/llama-server"
 [assets.windows-x86_64]
 url = "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b10787-73bfe6c/llama-prism-b10787-73bfe6c-bin-win-cpu-x64.zip"
 sha256 = "ab1ea7cfc23fdac244088fd6f1762d0efa24d3d79fe18d4f16c496cc00775728"
-binary = "llama-prism-b10787-73bfe6c/llama-server.exe"
+binary = "llama-server.exe"

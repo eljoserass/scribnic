@@ -1,9 +1,10 @@
 """Resolve a requested artifact using only declared workflow producers."""
 
+import re
 from dataclasses import dataclass
 
 from .artifacts import ArtifactKind
-from .config import StepConfig, WorkflowConfig
+from .config import StepConfig, WorkflowConfig, artifact_kind, validate_settings
 
 
 @dataclass(frozen=True)
@@ -18,7 +19,8 @@ def _producers(config: WorkflowConfig, target: ArtifactKind) -> list[StepConfig]
 
 def _upstream(config: WorkflowConfig, step: StepConfig) -> StepConfig:
     candidates = [
-        producer for producer in config.steps
+        producer
+        for producer in config.steps
         if producer.model.output in step.model.inputs
     ]
     if step.source is not None:
@@ -71,9 +73,21 @@ def validate_workflow(config: WorkflowConfig) -> None:
     names = [step.name for step in config.steps]
     if len(names) != len(set(names)):
         raise ValueError("Workflow step names must be unique.")
+    if not config.inputs:
+        raise ValueError("A workflow must declare its accepted inputs.")
+    artifact_kind(config.default_output)
+    for kind in config.inputs:
+        artifact_kind(kind)
     for step in config.steps:
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", step.name):
+            raise ValueError(
+                "Step names must use letters, numbers, underscores or hyphens."
+            )
         if not step.model.inputs:
             raise ValueError(f"Step {step.name!r} declares no accepted inputs.")
+        for kind in (*step.model.inputs, step.model.output):
+            artifact_kind(kind)
+        validate_settings(step)
         if step.source is not None:
             _upstream(config, step)
         _validate_cycles(config, step, ())
@@ -87,7 +101,8 @@ def _validate_cycles(
     if step.name in visiting:
         raise ValueError(f"Workflow dependency cycle involving {step.name!r}.")
     parents = [
-        item for item in config.steps
+        item
+        for item in config.steps
         if item.model.output in step.model.inputs
         and (step.source is None or item.name == step.source)
     ]

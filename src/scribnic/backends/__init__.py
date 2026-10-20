@@ -1,4 +1,3 @@
-"""Implementations of the pipeline contracts."""
 """Construct only the backend selected by a workflow step."""
 
 from ..config import StepConfig
@@ -14,7 +13,9 @@ def create_backend(step: StepConfig, prepared: PreparedStep):
         from .moss_transcribe_diarize import MossTranscribeDiarize
 
         if step.runtime.engine != "transformers":
-            raise ValueError("MOSS-Transcribe-Diarize currently uses the Transformers runtime.")
+            raise ValueError(
+                "MOSS-Transcribe-Diarize currently uses the Transformers runtime."
+            )
         return MossTranscribeDiarize(step, prepared)
     if step.model.backend == "demo":
         from .demo import DemoBackend

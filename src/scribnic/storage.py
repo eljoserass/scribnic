@@ -6,8 +6,14 @@ from dataclasses import asdict
 from pathlib import Path
 
 from .artifacts import (
-    Artifact, AudioFile, DiarizedTranscript, Note, RunResult, SpeakerSegment,
-    TextSegment, Transcript,
+    Artifact,
+    AudioFile,
+    DiarizedTranscript,
+    Note,
+    RunResult,
+    SpeakerSegment,
+    TextSegment,
+    Transcript,
 )
 
 SCHEMA_VERSION = 1
@@ -26,7 +32,10 @@ def artifact_from_dict(data: dict) -> Artifact:
     kind = data.get("kind")
     if kind == "audio":
         return AudioFile(
-            Path(data["path"]), data.get("sample_rate"), data.get("duration"), data.get("sha256")
+            Path(data["path"]),
+            data.get("sample_rate"),
+            data.get("duration"),
+            data.get("sha256"),
         )
     if kind == "note":
         return Note(data["text"])
@@ -35,9 +44,9 @@ def artifact_from_dict(data: dict) -> Artifact:
             return Transcript.from_text(data["text"])
         return Transcript(tuple(TextSegment(**segment) for segment in data["segments"]))
     if kind == "diarized_transcript":
-        return DiarizedTranscript(tuple(
-            SpeakerSegment(**segment) for segment in data["segments"]
-        ))
+        return DiarizedTranscript(
+            tuple(SpeakerSegment(**segment) for segment in data["segments"])
+        )
     raise ValueError(f"Unsupported artifact kind: {kind!r}")
 
 
@@ -49,19 +58,28 @@ def _import_transcript(data: dict) -> Transcript | DiarizedTranscript:
     elif isinstance(data.get("text"), str):
         return Transcript.from_text(data["text"])
     else:
-        raise ValueError("Expected a Scribnic artifact or a transcript with text/segments.")
+        raise ValueError(
+            "Expected a Scribnic artifact or a transcript with text/segments."
+        )
     if any("speaker" in segment for segment in segments):
-        return DiarizedTranscript(tuple(
-            SpeakerSegment(
-                segment["text"], segment.get("speaker"), segment.get("start"),
-                segment.get("end"), segment.get("role"),
+        return DiarizedTranscript(
+            tuple(
+                SpeakerSegment(
+                    segment["text"],
+                    segment.get("speaker"),
+                    segment.get("start"),
+                    segment.get("end"),
+                    segment.get("role"),
+                )
+                for segment in segments
             )
+        )
+    return Transcript(
+        tuple(
+            TextSegment(segment["text"], segment.get("start"), segment.get("end"))
             for segment in segments
-        ))
-    return Transcript(tuple(
-        TextSegment(segment["text"], segment.get("start"), segment.get("end"))
-        for segment in segments
-    ))
+        )
+    )
 
 
 def load_artifact(path: str | Path) -> Artifact:
@@ -126,7 +144,9 @@ class RunStore:
         for artifact in result.artifacts:
             save_artifact(artifact, self.directory / f"{artifact.kind}.json")
         if result.note is not None:
-            (self.directory / "note.txt").write_text(result.note.text + "\n", encoding="utf-8")
+            (self.directory / "note.txt").write_text(
+                result.note.text + "\n", encoding="utf-8"
+            )
         data = result_to_dict(result)
         write_json(self.directory / "result.json", data)
         metadata = {key: value for key, value in data.items() if key != "artifacts"}

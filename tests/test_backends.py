@@ -5,13 +5,13 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
+from helpers import MODEL, NOTE, note_server
+
 from scribnic import DiarizedTranscript, SpeakerSegment, Transcript, open_workflow
 from scribnic.backends.http_generation import HTTPGeneration
 from scribnic.backends.moss_transcribe_diarize import parse_transcript
 from scribnic.config import load_workflow
 from scribnic.downloads import PreparedStep, download_file
-
-from test_generation import MODEL, NOTE, note_server
 
 
 def http_step(url: str):
@@ -41,7 +41,10 @@ class HTTPBackendTests(unittest.TestCase):
         self.assertEqual(request["top_k"], 20)
         self.assertEqual(request["presence_penalty"], 1.5)
         self.assertFalse(request["chat_template_kwargs"]["enable_thinking"])
-        self.assertEqual(request["messages"][1]["content"], "TRANSCRIPCIÓN:\nPaciente: tos desde ayer.")
+        self.assertEqual(
+            request["messages"][1]["content"],
+            "TRANSCRIPCIÓN:\nPaciente: tos desde ayer.",
+        )
 
     def test_model_identity_and_incomplete_notes_are_checked(self):
         with note_server(models=[]) as (url, _):
@@ -70,9 +73,12 @@ class HTTPBackendTests(unittest.TestCase):
     def test_long_inputs_fail_without_sending_a_generation_request(self):
         with note_server() as (url, requests):
             step = http_step(url)
-            step = replace(step, model=replace(
-                step.model, settings=step.model.settings | {"max_input_chars": 1}
-            ))
+            step = replace(
+                step,
+                model=replace(
+                    step.model, settings=step.model.settings | {"max_input_chars": 1}
+                ),
+            )
             backend = HTTPGeneration(step, PreparedStep(Path("unused")))
             try:
                 with self.assertRaisesRegex(ValueError, "Nothing was truncated"):
@@ -90,7 +96,9 @@ class PreparationTests(unittest.TestCase):
             path = Path(directory) / "asset"
             path.write_bytes(b"example")
             checksum = hashlib.sha256(b"example").hexdigest()
-            self.assertEqual(download_file("unused", path, checksum, allowed=False), path)
+            self.assertEqual(
+                download_file("unused", path, checksum, allowed=False), path
+            )
             path.write_bytes(b"corrupted")
             with self.assertRaisesRegex(ValueError, "invalid cached asset"):
                 download_file("unused", path, checksum, allowed=False)

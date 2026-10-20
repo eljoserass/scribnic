@@ -2,9 +2,16 @@
 
 import re
 import wave
+from contextlib import nullcontext
 from time import perf_counter
 
-from ..artifacts import Artifact, AudioFile, DiarizedTranscript, SpeakerSegment, StepOutput
+from ..artifacts import (
+    Artifact,
+    AudioFile,
+    DiarizedTranscript,
+    SpeakerSegment,
+    StepOutput,
+)
 from ..config import StepConfig
 from ..downloads import PreparedStep
 from ..observability import tracer
@@ -23,13 +30,18 @@ def parse_transcript(text: str) -> DiarizedTranscript:
     segments = []
     position = 0
     for match in SEGMENT.finditer(text):
-        if text[position:match.start()].strip():
+        if text[position : match.start()].strip():
             raise ValueError("MOSS returned an unparseable transcript fragment.")
         start, speaker, content, end = match.groups()
         if content.strip():
-            segments.append(SpeakerSegment(
-                content.strip(), f"speaker_{int(speaker) - 1}", float(start), float(end)
-            ))
+            segments.append(
+                SpeakerSegment(
+                    content.strip(),
+                    f"speaker_{int(speaker) - 1}",
+                    float(start),
+                    float(end),
+                )
+            )
         position = match.end()
     if text[position:].strip() or (text.strip() and not segments):
         raise ValueError("MOSS returned an unparseable transcript fragment.")
@@ -58,16 +70,22 @@ class MossTranscribeDiarize:
             dtype_name = "bfloat16" if self.device.type == "cuda" else "float32"
         dtype = getattr(torch, str(dtype_name))
         location = str(self.prepared.model_path)
-        self.model = AutoModelForCausalLM.from_pretrained(
-            location,
-            trust_remote_code=True,
-            local_files_only=True,
-            dtype=dtype,
-            attn_implementation=self.step.runtime.settings.get("attention", "sdpa"),
-        ).to(self.device).eval()
-        self.processor = AutoProcessor.from_pretrained(
+        model = (
+            AutoModelForCausalLM.from_pretrained(
+                location,
+                trust_remote_code=True,
+                local_files_only=True,
+                dtype=dtype,
+                attn_implementation=self.step.runtime.settings.get("attention", "sdpa"),
+            )
+            .to(self.device)
+            .eval()
+        )
+        processor = AutoProcessor.from_pretrained(
             location, trust_remote_code=True, local_files_only=True
         )
+        self.model = model
+        self.processor = processor
         return perf_counter() - started
 
     def _device(self, torch):
@@ -90,14 +108,24 @@ class MossTranscribeDiarize:
         with wave.open(str(audio.path), "rb") as wav:
             frames = wav.readframes(wav.getnframes())
         samples = np.frombuffer(frames, dtype="<i2").astype("float32") / 32768
-        messages = [{"role": "user", "content": [
-            {"type": "audio", "audio": str(audio.path)},
-            {"type": "text", "text": self.step.model.settings.get("prompt", PROMPT)},
-        ]}]
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "audio", "audio": str(audio.path)},
+                    {
+                        "type": "text",
+                        "text": self.step.model.settings.get("prompt", PROMPT),
+                    },
+                ],
+            }
+        ]
         prompt = self.processor.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
-        audio_kwargs = {"device": str(self.device)} if self.device.type == "cuda" else {}
+        audio_kwargs = (
+            {"device": str(self.device)} if self.device.type == "cuda" else {}
+        )
         return self.processor(
             text=prompt, audio=[samples], return_tensors="pt", audio_kwargs=audio_kwargs
         ).to(self.device)
@@ -107,7 +135,12 @@ class MossTranscribeDiarize:
             raise ValueError("MOSS needs a validated WAV audio artifact.")
         with tracer().start_as_current_span("scribnic.moss.load"):
             load_seconds = self._load()
-        with torch_profile(self.model, self.torch, self.device) as profile:
+        if self.device.type == "cuda":
+            self.torch.cuda.reset_peak_memory_stats(self.device)
+        include_gpu = self.step.runtime.settings.get("profile_gpu", False)
+        with torch_profile(
+            self.model, self.torch, self.device, include_gpu=include_gpu
+        ) as profile:
             text, prompt_length, generated_tokens = self._generate(source)
         transcript = parse_transcript(text)
         for segment in transcript.segments:
@@ -124,8 +157,13 @@ class MossTranscribeDiarize:
             "profile": profile,
         }
         if self.device.type == "cuda":
-            metadata["peak_gpu_allocated_bytes"] = self.torch.cuda.max_memory_allocated(self.device)
-            metadata["peak_gpu_reserved_bytes"] = self.torch.cuda.max_memory_reserved(self.device)
+            metadata["gpu_memory_scope"] = "inference including resident model weights"
+            metadata["peak_gpu_allocated_bytes"] = self.torch.cuda.max_memory_allocated(
+                self.device
+            )
+            metadata["peak_gpu_reserved_bytes"] = self.torch.cuda.max_memory_reserved(
+                self.device
+            )
         return StepOutput(transcript, metadata)
 
     def _generate(self, source: AudioFile) -> tuple[str, int, int]:
@@ -135,12 +173,21 @@ class MossTranscribeDiarize:
         settings = self.step.model.settings
         maximum = int(settings.get("max_tokens", 16384))
         minimum = int(settings.get("min_tokens_budget", 2048))
-        duration_budget = round(source.duration * float(settings.get("tokens_per_second", 12)))
+        duration_budget = round(
+            source.duration * float(settings.get("tokens_per_second", 12))
+        )
         budget = min(maximum, max(minimum, duration_budget))
-        with self.torch.inference_mode():
-            output = self.model.generate(**inputs, max_new_tokens=budget, do_sample=False)
+        convolution = nullcontext()
+        if self.step.runtime.settings.get("cudnn_enabled") is False:
+            convolution = self.torch.backends.cudnn.flags(enabled=False)
+        with convolution, self.torch.inference_mode():
+            output = self.model.generate(
+                **inputs, max_new_tokens=budget, do_sample=False
+            )
         if output.shape[1] - prompt_length >= budget:
-            raise ValueError("MOSS reached its output limit; incomplete transcript rejected.")
+            raise ValueError(
+                "MOSS reached its output limit; incomplete transcript rejected."
+            )
         text = self.processor.tokenizer.decode(
             output[0][prompt_length:], skip_special_tokens=True
         ).strip()

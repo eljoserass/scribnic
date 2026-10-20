@@ -17,7 +17,9 @@ def cache_directory() -> Path:
     if os.getenv("SCRIBNIC_CACHE"):
         return Path(os.environ["SCRIBNIC_CACHE"]).expanduser()
     if platform.system() == "Windows":
-        return Path(os.getenv("LOCALAPPDATA", Path.home() / "AppData/Local")) / "scribnic"
+        return (
+            Path(os.getenv("LOCALAPPDATA", Path.home() / "AppData/Local")) / "scribnic"
+        )
     if platform.system() == "Darwin":
         return Path.home() / "Library/Caches/scribnic"
     return Path(os.getenv("XDG_CACHE_HOME", Path.home() / ".cache")) / "scribnic"
@@ -94,9 +96,12 @@ def prepare_binary(runtime: RuntimeConfig, cache: Path, download: bool) -> Path:
 def _hub_cache() -> Path:
     if os.getenv("HF_HUB_CACHE"):
         return Path(os.environ["HF_HUB_CACHE"])
-    home = Path(os.getenv(
-        "HF_HOME", Path(os.getenv("XDG_CACHE_HOME", Path.home() / ".cache")) / "huggingface"
-    ))
+    home = Path(
+        os.getenv(
+            "HF_HOME",
+            Path(os.getenv("XDG_CACHE_HOME", Path.home() / ".cache")) / "huggingface",
+        )
+    )
     return home / "hub"
 
 
@@ -113,16 +118,22 @@ def _prepare_snapshot(model: ModelConfig, download: bool) -> Path:
     try:
         from huggingface_hub import snapshot_download
     except ImportError as error:
-        raise ImportError("Install scribnic[moss] to prepare the MOSS runtime.") from error
-    return Path(snapshot_download(
-        repo_id=model.repository,
-        revision=model.revision,
-        allow_patterns=["*.json", "*.py", "*.safetensors", "*.txt", "*.jinja"],
-        max_workers=2,
-    ))
+        raise ImportError(
+            "Install scribnic[moss] to prepare the MOSS runtime."
+        ) from error
+    return Path(
+        snapshot_download(
+            repo_id=model.repository,
+            revision=model.revision,
+            allow_patterns=["*.json", "*.py", "*.safetensors", "*.txt", "*.jinja"],
+            max_workers=2,
+        )
+    )
 
 
-def prepare_model(model: ModelConfig, runtime: RuntimeConfig, cache: Path, download: bool):
+def prepare_model(
+    model: ModelConfig, runtime: RuntimeConfig, cache: Path, download: bool
+):
     if runtime.engine == "transformers":
         return _prepare_snapshot(model, download)
     if runtime.engine != "llama_cpp":

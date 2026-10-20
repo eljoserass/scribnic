@@ -5,9 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import ClassVar, Literal, TypeAlias
 
-ArtifactKind: TypeAlias = Literal[
-    "audio", "transcript", "diarized_transcript", "note"
-]
+ArtifactKind: TypeAlias = Literal["audio", "transcript", "diarized_transcript", "note"]
 ARTIFACT_KINDS = ("audio", "transcript", "diarized_transcript", "note")
 
 
@@ -40,6 +38,8 @@ class TextSegment:
     end: float | None = None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.text, str):
+            raise ValueError("Segment text must be a string.")
         validate_interval(self.start, self.end)
 
 
@@ -52,6 +52,12 @@ class SpeakerSegment:
     role: str | None = None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.text, str):
+            raise ValueError("Segment text must be a string.")
+        if self.speaker is not None and not isinstance(self.speaker, str):
+            raise ValueError("A speaker label must be a string or None.")
+        if self.role is not None and not isinstance(self.role, str):
+            raise ValueError("A role must be a string or None.")
         validate_interval(self.start, self.end)
 
 
@@ -62,6 +68,8 @@ class Transcript:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "segments", tuple(self.segments))
+        if not all(isinstance(segment, TextSegment) for segment in self.segments):
+            raise ValueError("A plain transcript needs TextSegment entries.")
 
     @classmethod
     def from_text(cls, text: str) -> "Transcript":
@@ -79,11 +87,15 @@ class DiarizedTranscript:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "segments", tuple(self.segments))
+        if not all(isinstance(segment, SpeakerSegment) for segment in self.segments):
+            raise ValueError("A diarized transcript needs SpeakerSegment entries.")
         previous_start = -1.0
         for segment in self.segments:
             if segment.start is not None:
                 if segment.start < previous_start:
-                    raise ValueError("Transcript segments must be ordered by start time.")
+                    raise ValueError(
+                        "Transcript segments must be ordered by start time."
+                    )
                 previous_start = segment.start
 
     @property
@@ -103,6 +115,10 @@ class DiarizedTranscript:
 class Note:
     text: str
     kind: ClassVar[ArtifactKind] = "note"
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.text, str):
+            raise ValueError("Note text must be a string.")
 
 
 Artifact: TypeAlias = AudioFile | Transcript | DiarizedTranscript | Note

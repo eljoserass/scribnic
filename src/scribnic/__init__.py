@@ -1,15 +1,44 @@
-"""Audio transcription, diarization, and conversation pipeline."""
+"""Reusable local scribe workflows, independent of CLI and application servers."""
 
-from .audio import FileSource
-from .core import Pipeline, attribute_speakers
-from .factory import build_pipeline
-from .models import Audio, PipelineResult, SpeakerSpan, TextSpan, Utterance
-from .artifacts import AudioFile, DiarizedTranscript, Note, RunResult, SpeakerSegment, Transcript
+from .artifacts import (
+    Artifact,
+    ArtifactKind,
+    AudioFile,
+    DiarizedTranscript,
+    Note,
+    RunResult,
+    SpeakerSegment,
+    TextSegment,
+    Transcript,
+)
+from .config import (
+    ModelConfig,
+    RuntimeConfig,
+    StepConfig,
+    WorkflowConfig,
+    load_workflow,
+)
+from .storage import load_artifact, save_artifact
 from .workflow import WorkflowRunError, WorkflowSession, open_workflow
 
 __all__ = [
-    "Audio", "FileSource", "Pipeline", "PipelineResult", "SpeakerSpan",
-    "TextSpan", "Utterance", "attribute_speakers", "build_pipeline",
-    "AudioFile", "DiarizedTranscript", "Note", "RunResult", "SpeakerSegment",
-    "Transcript", "WorkflowRunError", "WorkflowSession", "open_workflow",
+    "Artifact",
+    "ArtifactKind",
+    "AudioFile",
+    "DiarizedTranscript",
+    "ModelConfig",
+    "Note",
+    "RunResult",
+    "RuntimeConfig",
+    "SpeakerSegment",
+    "StepConfig",
+    "TextSegment",
+    "Transcript",
+    "WorkflowConfig",
+    "WorkflowRunError",
+    "WorkflowSession",
+    "load_artifact",
+    "load_workflow",
+    "open_workflow",
+    "save_artifact",
 ]

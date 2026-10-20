@@ -93,10 +93,17 @@ Observability checkpoint: local OTLP traces/metrics/logs export successfully in 
 clean installation without Torch. Recovery tests verify that a failed note keeps
 the diarized transcript and an error report. Process sampling covers Scribnic and
 owned local runtimes; remote service resources require service-side telemetry.
-- [ ] Replace the CLI with a thin workflow interface; remove discarded NeMo,
+- [x] Replace the CLI with a thin workflow interface; remove discarded NeMo,
       Nemotron, Qwen-ASR, and VibeVoice paths and obsolete scripts/tests.
-- [ ] Separate portable client dependencies, optional MOSS dependencies, and dev
+- [x] Separate portable client dependencies, optional MOSS dependencies, and dev
       tools; configure Ruff, refresh the lock, and document platforms; commit/push.
+
+Cleanup checkpoint: the public API and CLI no longer import the old pipeline.
+Removed the superseded source, copied NeMo scripts, legacy command wrapper, and
+obsolete backend tests. Preserved notes and local data. A clean locked MOSS install
+uses standard CPU Torch on Linux; the original custom ROCm environment is intact.
+Mac/Windows archive hashes and executable layouts were checked; hardware inference
+on those platforms remains untested.
 - [ ] Run unit/style/package checks and a small real MOSS/Bonsai workflow.
 - [ ] Demonstrate saved transcript -> explicit modification -> note generation;
       inspect note/transcript quality and record actual measurements.

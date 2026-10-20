@@ -7,18 +7,25 @@ import unittest
 from pathlib import Path
 
 from opentelemetry import trace
+from test_workflow import FakeBackend, configuration, write_audio
 
-from scribnic import DiarizedTranscript, SpeakerSegment, Transcript, WorkflowRunError
-from scribnic import open_workflow
+from scribnic import (
+    DiarizedTranscript,
+    SpeakerSegment,
+    Transcript,
+    WorkflowRunError,
+    open_workflow,
+)
 from scribnic.observability import Telemetry
 from scribnic.storage import artifact_from_dict, artifact_to_dict, load_artifact
-from test_workflow import FakeBackend, configuration, write_audio
 
 
 class StorageTests(unittest.TestCase):
     def test_roundtrip_preserves_unknown_times_and_independent_roles(self):
         original = DiarizedTranscript((SpeakerSegment("Hola", "S02", role="doctor"),))
-        restored = artifact_from_dict(json.loads(json.dumps(artifact_to_dict(original))))
+        restored = artifact_from_dict(
+            json.loads(json.dumps(artifact_to_dict(original)))
+        )
         self.assertEqual(original, restored)
         self.assertIsNone(restored.segments[0].start)
         self.assertEqual(restored.without_speakers(), Transcript.from_text("Hola"))
@@ -60,7 +67,9 @@ class StorageTests(unittest.TestCase):
         source = Transcript.from_text("<script>alert('x')</script>")
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "result"
-            with open_workflow(configuration(), backend_factory=lambda step: FakeBackend(step, [])) as session:
+            with open_workflow(
+                configuration(), backend_factory=lambda step: FakeBackend(step, [])
+            ) as session:
                 session.run(source, output_dir=output)
             report = (output / "report.html").read_text()
         self.assertNotIn("<script>", report)
@@ -77,7 +86,10 @@ class TelemetryTests(unittest.TestCase):
                 with open_workflow("demo") as session:
                     result = session.run(Transcript.from_text("Example"))
                 logging.getLogger("scribnic").warning("Test diagnostic")
-            records = [json.loads(line) for line in (output / "traces.jsonl").read_text().splitlines()]
+            records = [
+                json.loads(line)
+                for line in (output / "traces.jsonl").read_text().splitlines()
+            ]
             spans = [
                 span
                 for record in records
@@ -85,7 +97,9 @@ class TelemetryTests(unittest.TestCase):
                 for scope in resource["scopeSpans"]
                 for span in scope["spans"]
             ]
-            root = next(span for span in spans if span["name"] == "scribnic.workflow.run")
+            root = next(
+                span for span in spans if span["name"] == "scribnic.workflow.run"
+            )
             self.assertEqual(root["traceId"].lower(), result.trace_id)
             self.assertTrue(all(span["traceId"] == root["traceId"] for span in spans))
             metrics = json.loads((output / "metrics.jsonl").read_text().splitlines()[0])
