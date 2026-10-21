@@ -5,3 +5,4 @@ engine = "transformers"
 device = "auto"
 dtype = "auto"
 attention = "sdpa"
+threads = 6

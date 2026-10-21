@@ -6,6 +6,7 @@ import platform
 from contextlib import ExitStack
 from contextvars import ContextVar
 from pathlib import Path
+from time import monotonic
 from typing import TextIO
 
 from opentelemetry import metrics, trace
@@ -32,6 +33,44 @@ def meter():
 def trace_id() -> str | None:
     current = trace.get_current_span().get_span_context()
     return f"{current.trace_id:032x}" if current.is_valid else None
+
+
+class GenerationProgress:
+    """Rate-limited diagnostics without logging model input or generated text."""
+
+    def __init__(self, name: str, interval: float = 5.0):
+        self.name = name
+        self.interval = interval
+        self.started = monotonic()
+        self.next_report = self.started
+        self.first_token_at: float | None = None
+        self.logger = logging.getLogger("scribnic.generation")
+
+    def update(self, generated_tokens: int) -> None:
+        now = monotonic()
+        if self.first_token_at is None:
+            self.first_token_at = now
+        if now < self.next_report:
+            return
+        self.next_report = now + self.interval
+        self.logger.info(
+            "%s · generando · %d tokens · %.0f s",
+            self.name,
+            generated_tokens,
+            now - self.started,
+            extra={
+                "scribnic.generation.tokens": generated_tokens,
+                "scribnic.generation.elapsed_seconds": now - self.started,
+            },
+        )
+
+    def timings(self) -> dict[str, float]:
+        if self.first_token_at is None:
+            return {}
+        return {
+            "time_to_first_token_seconds": self.first_token_at - self.started,
+            "generation_seconds": monotonic() - self.started,
+        }
 
 
 def _progress_processor(stream: TextIO):
@@ -137,9 +176,18 @@ class Telemetry:
         )
         self._handler = LoggingHandler(logger_provider=self._logs)
         self._logger = logging.getLogger("scribnic")
+        previous_level = self._logger.level
+        self._logger.setLevel(logging.INFO)
+        self._cleanup.callback(self._logger.setLevel, previous_level)
         self._logger.addHandler(self._handler)
         self._cleanup.callback(self._handler.close)
         self._cleanup.callback(self._logger.removeHandler, self._handler)
+        if self.progress is not None:
+            console = logging.StreamHandler(self.progress)
+            console.setFormatter(logging.Formatter("  %(message)s"))
+            self._logger.addHandler(console)
+            self._cleanup.callback(console.close)
+            self._cleanup.callback(self._logger.removeHandler, console)
 
     def __exit__(self, *exc: object) -> None:
         try:

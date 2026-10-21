@@ -78,6 +78,8 @@ def validate_settings(step: StepConfig) -> None:
             if key not in settings:
                 continue
             value = settings[key]
+            if key in {"threads", "threads_batch"} and type(value) is not int:
+                raise ValueError(f"{step.name}.{key} must be a positive integer.")
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 raise ValueError(f"{step.name}.{key} must be a positive number.")
             if not math.isfinite(value) or value <= 0:

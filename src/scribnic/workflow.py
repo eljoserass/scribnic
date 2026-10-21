@@ -186,7 +186,7 @@ class WorkflowSession:
             state.resources = monitor.summary()
             status = "interrupted" if isinstance(error, KeyboardInterrupt) else "error"
             result = state.snapshot(status, str(error) or status)
-            logging.getLogger(__name__).error("Workflow failed: %s", error)
+            logging.getLogger(__name__).error("Workflow failed: %s", result.error)
             self._save_failure(store, result, error)
             if isinstance(error, KeyboardInterrupt):
                 raise
