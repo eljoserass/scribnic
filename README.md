@@ -204,7 +204,8 @@ externa abrupta, el último checkpoint puede seguir indicando `running`.
 | `report.html` | Vista local, sin servidor ni recursos web externos. |
 | `telemetry/*.jsonl` | Trazas, métricas y logs en formato OTLP JSONL real. |
 | `note-metrics.prom` | Métricas nativas de llama-server, cuando están disponibles. |
-| `profiles/moss-torch-trace.json` | Traza opcional de operadores para Perfetto/Chrome. |
+| `profiles/moss-profile.json` | Resumen agregado por operador y fase, y lista de bloques. |
+| `profiles/moss-trace-*.json.gz` | Captura continua de operadores en bloques comprimidos para Perfetto. |
 
 Se muestrean RSS, tiempo de CPU y cores equivalentes de Scribnic y los runtimes
 locales que posee. Se conserva el pico de memoria asignada/reservada por Torch en
@@ -218,8 +219,27 @@ adaptor, prefill y decode de MOSS; por defecto captura operadores de CPU. Para
 solicitar también actividad GPU usa `profile_gpu = true` en
 `steps.speech.runtime_settings`. En MPS emite signposts para Instruments; no promete
 una línea temporal de kernels Metal en la traza JSON. Empieza con audio corto:
-las trazas detalladas pueden consumir mucha memoria. El profiler de Torch no ve
-los kernels del proceso llama-server, que tiene sus propias métricas y log.
+las trazas detalladas pueden consumir mucha memoria y disco. La captura se exporta
+cada 16 pasos del decoder, sin omitir pasos, para no retener toda la consulta en
+RAM. Los picos del encoder/prefill siguen dependiendo del audio; esto no fija un
+límite de RAM. `profile_window_steps` permite ajustar el tamaño de bloque. Se guardan
+formas de entrada, asignaciones de tensores y tiempos por operador; el resumen y
+los operadores más costosos aparecen también en `report.html`. La memoria neta
+por operador es un balance de asignaciones, no un pico de RAM o VRAM.
+
+Para perfilar `dialogue8` completo, elige un directorio nuevo:
+
+```bash
+uv run --extra moss scribnic run ./data/examples/dialogue8.wav \
+  --workflow moss_bonsai --profile --output-dir runs/dialogue8-full-profile
+```
+
+Esto incluye el encoder, el prefill y todos los pasos de decode de MOSS. Abre los
+bloques `.json.gz` en Perfetto y consulta `moss-profile.json` para los totales de
+toda la ejecución. Compara tiempos de rendimiento con una ejecución sin profiler:
+la instrumentación, la agregación y la compresión pueden multiplicar el tiempo.
+El profiler de Torch no ve los
+operadores del proceso llama-server, que conserva sus propias métricas y log.
 
 ## Plataformas y validación
 

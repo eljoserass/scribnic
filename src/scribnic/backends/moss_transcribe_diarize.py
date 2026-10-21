@@ -144,7 +144,11 @@ class MossTranscribeDiarize:
         with self._cpu_threads() as threads:
             self._describe_runtime(source, threads)
             with torch_profile(
-                self.model, self.torch, self.device, include_gpu=include_gpu
+                self.model,
+                self.torch,
+                self.device,
+                include_gpu=include_gpu,
+                window_steps=self.step.runtime.settings.get("profile_window_steps", 16),
             ) as profile:
                 text, prompt_length, generated_tokens, timings = self._generate(source)
         transcript = parse_transcript(text)

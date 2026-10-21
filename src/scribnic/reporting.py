@@ -79,6 +79,48 @@ def _report_resources(result: RunResult) -> str:
     return "".join(rows)
 
 
+def _report_profile(directory: Path) -> str:
+    path = directory / "profiles" / "moss-profile.json"
+    if not path.is_file():
+        return ""
+    summary = json.loads(path.read_text(encoding="utf-8"))
+    rows = []
+    operators = summary["operators"]
+    total = sum(row["self_cpu_seconds"] for row in operators)
+    for row in operators[:20]:
+        percentage = row["self_cpu_seconds"] / total * 100 if total else 0
+        memory = row["self_cpu_memory_net_bytes"] / 1024**2
+        rows.append(
+            f"<tr><td>{html.escape(row['name'])}</td><td>{row['calls']}</td>"
+            f"<td>{row['self_cpu_seconds']:.3f} s</td><td>{percentage:.1f}%</td>"
+            f"<td>{memory:+.1f} MiB</td></tr>"
+        )
+    phases = "".join(
+        f"<tr><td>{html.escape(row['name'])}</td><td>{row['calls']}</td>"
+        f"<td>{row['cpu_seconds']:.3f} s</td></tr>"
+        for row in summary["phases"]
+    )
+    overhead = ""
+    if "export_and_aggregation_seconds" in summary:
+        seconds = summary["export_and_aggregation_seconds"]
+        overhead = f"<p>Exportación y agregación del profiler: {seconds:.2f} s, incluidos en la duración total.</p>"
+    return (
+        '<section class="details"><h2>Profiling de MOSS</h2>'
+        '<div class="table"><table><thead><tr><th>Fase</th><th>Llamadas</th>'
+        f"<th>CPU inclusivo</th></tr></thead><tbody>{phases}</tbody></table></div>"
+        '<h3>Operadores con más tiempo propio de CPU</h3><div class="table"><table>'
+        "<thead><tr><th>Operador</th><th>Llamadas</th><th>CPU propio</th>"
+        f"<th>Proporción</th><th>Memoria neta</th></tr></thead><tbody>{''.join(rows)}</tbody></table></div>"
+        '<p class="muted">Las fases incluyen operaciones anidadas. La memoria neta '
+        "es el balance de asignaciones de tensores observado, y puede ser negativa; "
+        "los picos RSS se muestran por separado. El profiling añade overhead.</p>"
+        f"{overhead}"
+        f"<p>{len(summary['traces'])} bloques comprimidos, sin omitir pasos. "
+        '<a href="profiles/moss-profile.json">Resumen completo y lista de trazas</a>.</p>'
+        "</section>"
+    )
+
+
 def _relative_url(path: Path, directory: Path) -> str:
     try:
         return quote(Path(os.path.relpath(path, directory)).as_posix())
@@ -127,6 +169,7 @@ def render_workflow_report(result: RunResult, directory: Path) -> str:
         transcript=_report_turns(result),
         steps=_report_steps(result),
         resources=_report_resources(result),
+        profiling=_report_profile(directory),
         links=_report_links(result, directory),
         configuration=html.escape(
             json.dumps(result.configuration, ensure_ascii=False, indent=2)

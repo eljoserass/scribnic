@@ -72,13 +72,17 @@ def validate_settings(step: StepConfig) -> None:
         "threads_batch",
         "timeout",
         "startup_timeout",
+        "profile_window_steps",
     )
     for settings in (step.model.settings, step.runtime.settings):
         for key in positive:
             if key not in settings:
                 continue
             value = settings[key]
-            if key in {"threads", "threads_batch"} and type(value) is not int:
+            if (
+                key in {"threads", "threads_batch", "profile_window_steps"}
+                and type(value) is not int
+            ):
                 raise ValueError(f"{step.name}.{key} must be a positive integer.")
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 raise ValueError(f"{step.name}.{key} must be a positive number.")

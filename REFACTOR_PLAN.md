@@ -161,6 +161,38 @@ Final validation on 20 October 2026:
 
 ## Follow-on work
 
+### Detailed profiling report, 21 October 2026
+
+`--profile` now flushes compressed traces every 16 language-model forwards and
+aggregates every window in `profiles/moss-profile.json`. The first encoder,
+adaptor and prefill plus every decode call are captured without sampling; the
+final partial window and failures are flushed too. Decoder events are released
+between windows. This does not place a fixed bound on encoder/prefill memory.
+The HTML report includes inclusive phase times, the top operators by self CPU
+time and signed net tensor allocations. Export/aggregation overhead is recorded
+separately. Stack recording is disabled; shapes and tensor memory are enabled.
+
+A real 12-second excerpt of `dialogue8` completed MOSS -> Bonsai under this profiler:
+`runs/profile-check-20261021/fast-export/report.html`.
+
+- 9 compressed trace blocks, 50.4 MiB total; 136 generated tokens.
+- Encoder 3.44 s; adaptor 0.006 s; prefill 0.77 s; 135 decode calls totaling 16.64 s.
+- Matrix multiplication (`aten::mm` plus `aten::addmm`) accounts for 82.5% of
+  operator self CPU time in this excerpt. These percentages are not measurements
+  of the complete five-minute recording or of GPU execution.
+- Profiled run total 163.59 s; export/aggregation callbacks account for 118.45 s.
+  Detailed profiling is intrusive; use the earlier unprofiled recording for
+  performance comparisons. Low-compression streaming reduces trace export cost.
+- Peak sampled application RSS 5.33 GiB. This includes profiling overhead and
+  is not a minimum client memory requirement.
+- 38 tests pass and one live test is opt-in; the built base wheel passes 35
+  tests with four optional checks skipped. Tests check full coverage across window
+  boundaries, the final partial window, error cleanup, and escaped HTML rendering.
+
+The README gives the full-recording command. This capture covers Torch operators
+inside MOSS; llama-server contributes native timings/metrics and process resources,
+but its internal C++/GGML operators still require native tooling.
+
 ### CPU execution diagnosis, 21 October 2026
 
 The normal `uv run --extra moss ... --workflow moss_bonsai` command selected the

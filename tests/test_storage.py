@@ -17,10 +17,40 @@ from scribnic import (
     open_workflow,
 )
 from scribnic.observability import Telemetry
+from scribnic.reporting import render_workflow_report
 from scribnic.storage import artifact_from_dict, artifact_to_dict, load_artifact
 
 
 class StorageTests(unittest.TestCase):
+    def test_operator_summary_is_rendered_and_operator_names_are_escaped(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with open_workflow("demo") as session:
+                result = session.run(Transcript.from_text("Example"))
+            profiles = root / "profiles"
+            profiles.mkdir()
+            row = {
+                "name": "<operator>",
+                "calls": 2,
+                "cpu_seconds": 1.0,
+                "self_cpu_seconds": 0.5,
+                "self_cpu_memory_net_bytes": -1024,
+            }
+            (profiles / "moss-profile.json").write_text(
+                json.dumps(
+                    {
+                        "operators": [row],
+                        "phases": [row],
+                        "traces": ["example.json.gz"],
+                    }
+                )
+            )
+            report = render_workflow_report(result, root)
+        self.assertIn("Profiling de MOSS", report)
+        self.assertIn("&lt;operator&gt;", report)
+        self.assertNotIn("<operator>", report)
+        self.assertIn("100.0%", report)
+
     def test_roundtrip_preserves_unknown_times_and_independent_roles(self):
         original = DiarizedTranscript((SpeakerSegment("Hola", "S02", role="doctor"),))
         restored = artifact_from_dict(
