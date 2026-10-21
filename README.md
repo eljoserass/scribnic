@@ -89,6 +89,12 @@ Las otras opciones de `run` son `--offline` (ninguna descarga de recursos) y
 dispositivos, prompts, límites y sampling se configuran en TOML.
 `--offline` permite llamar a un endpoint HTTP configurado; no es un bloqueo de red.
 
+El progreso normal de MOSS muestra la carga, el dispositivo efectivo, la precisión,
+los hilos de CPU y las versiones del runtime. Después informa del encoder/prefill
+y publica el número de tokens generados aproximadamente cada cinco segundos,
+también en los logs OTLP. Esto funciona sin `--profile`. El contador indica trabajo
+real, no un porcentaje de audio procesado; la nota empieza cuando termina MOSS.
+
 Puedes seleccionar un preset, archivo o carpeta con `--workflow`. Una carpeta
 usa `default.toml` o su único TOML; si hay varios, exige elegir uno.
 Un workflow personalizado puede reutilizar presets y sobrescribir ajustes:
@@ -221,6 +227,12 @@ El lock usa Torch CPU en Linux/Windows y el wheel habitual en macOS. No instala
 ROCm ni CUDA como parte de la instalación portable. Para un entorno GPU preparado,
 instala Scribnic y las dependencias compatibles sin sustituir el Torch específico
 de ese entorno; evita `uv sync` sobre una `.venv` de aceleración personalizada.
+
+Si la terminal muestra `Torch ...+cpu`, `device = "auto"` ejecuta MOSS en CPU
+aunque el PC tenga una GPU AMD/NVIDIA. Un WAV de cinco minutos puede tardar bastante
+más que la duración del audio. El preset limita MOSS a seis hilos durante inferencia
+en CPU (`threads` en el runtime Transformers); el valor anterior se restaura al salir.
+Cambiar solamente `device` no instala el runtime de aceleración que falta.
 
 MOSS selecciona CUDA/ROCm si el Torch instalado lo detecta y CPU en los demás
 casos. MPS requiere selección explícita (`device = "mps"`) y no se ha validado.

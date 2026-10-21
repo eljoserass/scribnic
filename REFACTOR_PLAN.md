@@ -161,6 +161,37 @@ Final validation on 20 October 2026:
 
 ## Follow-on work
 
+### CPU execution diagnosis, 21 October 2026
+
+The normal `uv run --extra moss ... --workflow moss_bonsai` command selected the
+portable Torch 2.14.1+cpu installation. The earlier 297.891-second recording had
+used `cuda:0` with ROCm (106.2 seconds of speech inference). The two interrupted
+CPU attempts stopped during speech after 38.5 and 447.7 seconds; the note service
+was idle. The CLI only exposed stage boundaries, hiding ongoing generation.
+
+The follow-up fix reports loading, effective device/dtype/CPU threads and Torch
+version, then encoder/prefill and generated-token counts about every five seconds.
+Progress is also exported as OTLP logs without clinical text. The Transformers
+preset sets six CPU threads temporarily and restores the previous setting. Run
+metadata now records runtime versions, thread count and time to first token.
+
+Full reproduction completed with the user's command and `dialogue8.wav`:
+
+- Report: `runs/dialogue8-cpu-progress-20261021/report.html`.
+- Status `success`; total 770.93 seconds (12 minutes 51 seconds).
+- MOSS: 755.07 seconds, 3967 input tokens, 2778 generated tokens, 81 segments and
+  two speaker IDs. Time to first token: 47.67 seconds. Float32 CPU, six threads.
+- Bonsai: 13.23 seconds; 1966 input tokens, 169 output tokens. Both models finish
+  and the managed llama-server exits normally. Deep profiling was disabled.
+- Unit suite: 36 passed, one opt-in live test skipped. Built-wheel base suite:
+  34 passed, three optional tests skipped. Lint, formatting, lock and build pass.
+- Tests verify progress rate limiting/log export, restoration of host logger and
+  CPU-thread settings, and unchanged greedy output with the progress callback.
+
+This fixes missing runtime/progress diagnostics. It does not restore the previous
+ROCm acceleration: the portable Linux installation remains CPU by design. CPU
+performance must not be presented as equivalent to the earlier GPU run.
+
 After this core is stable: create the separate `scribe_eval` adapter, start with
 saved predictions and a few PriMock57 samples, add automatic metrics and paper
 protocols, then scale datasets/experiments. Keep quality evaluation independent of
