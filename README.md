@@ -54,10 +54,84 @@ ffmpeg -i entrada.mp3 -ac 1 -ar 16000 -c:a pcm_s16le consulta.wav
 
 | Workflow | Voz | Nota |
 | --- | --- | --- |
+| `whisper_bonsai` | Whisper small multilingüe Q8_0 / whisper-cli | Bonsai / llama-server gestionado |
 | `moss_bonsai` | MOSS / Transformers | Bonsai / llama-server gestionado |
 | `moss_bonsai_http` | MOSS / Transformers | Bonsai / endpoint existente |
 | `bonsai_note` | Entrada de texto | Bonsai / llama-server gestionado |
 | `demo` | Salidas inventadas | Salida inventada |
+
+### Whisper.cpp sin diarización
+
+`whisper_bonsai` conecta `audio → transcript → note` usando el núcleo existente.
+El modelo es Whisper **small multilingüe Q8_0**, con idioma español y beam size 5.
+Los pesos (264 MB) se descargan con revisión y SHA256 fijados. No requiere
+`[moss]`, Torch, Transformers ni bindings Python de Whisper.cpp.
+Este workflow usa Bonsai con `temperature = 0.0` como baseline greedy: el perfil
+recomendado de temperatura 0,7 devolvió una etiqueta de thinking en la prueba con
+texto sin hablantes. El fallo original se conserva y los otros presets mantienen
+su perfil publicado. No se filtra ni se oculta ese texto para aceptar una nota.
+
+Esta primera integración requiere un **`whisper-cli` externo** en `PATH` o indicado
+por `SCRIBNIC_WHISPER_CPP_BINARY`. `prepare` descarga pesos y comprueba el ejecutable;
+todavía no instala ni compila Whisper.cpp automáticamente. La versión probada es
+`v1.9.5`, commit `d1be6fde11ac6e0407606b4e42fe72d34add8037`.
+Para compilarlo necesitas Git, CMake y un compilador C/C++:
+
+```bash
+git clone --depth 1 --branch v1.9.5 https://github.com/ggml-org/whisper.cpp.git /ruta/whisper.cpp
+cmake -S /ruta/whisper.cpp -B /ruta/whisper.cpp/build -DCMAKE_BUILD_TYPE=Release
+cmake --build /ruta/whisper.cpp/build --target whisper-cli --config Release -j 6
+export SCRIBNIC_WHISPER_CPP_BINARY=/ruta/whisper.cpp/build/bin/whisper-cli
+```
+
+Si `whisper-cli` ya está en `PATH`, puedes ejecutar directamente:
+
+```bash
+uv run scribnic prepare --workflow whisper_bonsai
+uv run scribnic run ./data/examples/dialogue8.wav --workflow whisper_bonsai
+
+# Obtener solo texto con timestamps.
+uv run scribnic run ./data/examples/dialogue8.wav --workflow whisper_bonsai \
+  --output transcript --output-dir runs/whisper-solo-texto
+```
+
+Para conservar un entorno ya sincronizado con extras, usa `uv run --no-sync`.
+El resultado incluye `transcript.json`, nota, informe y telemetría de CPU/RAM del
+proceso nativo. Los logs y el JSON nativo completo se conservan en la caché;
+sus rutas, el hash del ejecutable y los tiempos nativos quedan en `run.json`.
+Los timestamps originales se conservan, tolerando hasta 0,5 s de exceso sobre el
+último sample. No se inventan hablantes. Cada llamada carga el modelo en un nuevo
+proceso `whisper-cli`, que se cierra también ante error, timeout o interrupción.
+
+En un workflow propio puedes ajustar:
+
+```toml
+[steps.speech.model_settings]
+language = "es" # "auto" permite detección automática.
+beam_size = 5
+
+[steps.speech.runtime_settings]
+threads = 6
+use_gpu = false # "auto" solicita GPU en macOS; CPU en las demás plataformas.
+timeout = 600
+# binary = "/ruta/al/whisper-cli"
+```
+
+Esta etapa no produce `diarized_transcript`. Whisper.cpp ya procesa el audio
+mediante ventanas internas; aquí todavía no hay recorte externo configurable ni
+unión de solapes. `--duration` del binario limita un único recorte, no recorre todo
+el archivo en bloques. `--length`, `--step` y `--keep` pertenecen al ejemplo de
+micrófono `whisper-stream`; no son flags de `scribnic run`. `--profile` no captura
+operadores C++ de Whisper: sí se conserva la telemetría normal y sus tiempos nativos.
+
+Prueba completa en WSL/CPU, sin profiler detallado:
+`runs/dialogue8-whisper-bonsai-20261022/report.html`. Audio de 297,9 s, 108 segmentos,
+36,8 s de transcripción y 9,1 s de nota; total 48,0 s, sin instalación ni descarga.
+Pico RSS muestreado por proceso: Whisper 672 MiB, Python 86 MiB, Bonsai 1,29 GiB.
+La nota sigue teniendo errores: convirtió una advertencia condicional en un síntoma
+confirmado y repitió «No consta». Se conserva como predicción para evaluación.
+
+### Otros workflows y configuración
 
 Para tu LM Studio en Windows:
 

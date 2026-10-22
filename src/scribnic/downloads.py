@@ -3,6 +3,7 @@
 import hashlib
 import os
 import platform
+import shutil
 import tarfile
 import tempfile
 import urllib.request
@@ -72,16 +73,22 @@ def _extract_archive(archive: Path, directory: Path) -> None:
 
 
 def prepare_binary(runtime: RuntimeConfig, cache: Path, download: bool) -> Path:
-    explicit = runtime.settings.get("binary")
+    environment = str(runtime.settings.get("binary_env", ""))
+    explicit = os.getenv(environment) or runtime.settings.get("binary")
     if explicit:
-        path = Path(str(explicit)).expanduser().resolve(strict=True)
-        return path
+        executable = shutil.which(os.path.expanduser(str(explicit)))
+        if executable is None:
+            raise ValueError(
+                f"Runtime binary not found: {explicit}. Install {runtime.name} or "
+                "set runtime_settings.binary to its executable path."
+            )
+        return Path(executable).resolve(strict=True)
     key = platform_key()
     if key not in runtime.assets:
         raise ValueError(f"No packaged {runtime.name} runtime for {key}.")
     asset = runtime.assets[key]
     release = str(runtime.settings["release"])
-    directory = cache / "runtimes" / "llama-cpp" / release
+    directory = cache / "runtimes" / runtime.engine.replace("_", "-") / release
     binary = directory / asset["binary"]
     if binary.is_file():
         return binary
@@ -136,7 +143,7 @@ def prepare_model(
 ):
     if runtime.engine == "transformers":
         return _prepare_snapshot(model, download)
-    if runtime.engine != "llama_cpp":
+    if runtime.engine not in {"llama_cpp", "whisper_cpp"}:
         return None
     if not all((model.repository, model.revision, model.filename, model.sha256)):
         raise ValueError(f"Model {model.name} needs a pinned file and checksum.")
@@ -165,7 +172,7 @@ class ResourceManager:
         if step.name not in self._prepared:
             model = prepare_model(step.model, step.runtime, self.cache, self.download)
             binary = None
-            if step.runtime.engine == "llama_cpp":
+            if step.runtime.engine in {"llama_cpp", "whisper_cpp"}:
                 binary = prepare_binary(step.runtime, self.cache, self.download)
             self._prepared[step.name] = PreparedStep(self.cache, model, binary)
         return self._prepared[step.name]

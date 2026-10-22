@@ -1,5 +1,61 @@
 # Workflow core refactor
 
+## Whisper.cpp experiment — 22 October 2026
+
+First compare plain transcription with the existing note generator:
+`audio → Whisper.cpp → Transcript → Bonsai → Note`. Keep the public API, resolver,
+CLI and SOAP prompt unchanged. The new workflow alone uses greedy Bonsai decoding
+(temperature 0) after the recommended temperature 0.7 emitted an unmatched
+`</think>` on this plain transcript. Preserve the failed run and existing presets.
+
+- [x] Add a Whisper.cpp CLI adapter without Python bindings or new client packages.
+- [x] Add pinned multilingual small Q8_0 weights and a `whisper_bonsai` workflow.
+- [x] Reuse checked downloads, transcript persistence, OTel and process monitoring.
+- [x] Document executable installation, explicit paths, CPU/Metal selection and
+      the difference between native windows, external chunks and batching.
+- [x] Validate a real full `dialogue8.wav` audio-to-note run and record resources.
+- [x] Complete unit/style/package checks and commit/push the bounded integration.
+
+The runtime executable is external in this first adapter: find `whisper-cli` on
+PATH, set `SCRIBNIC_WHISPER_CPP_BINARY`, or set runtime `binary`. Record its SHA256;
+do not claim an arbitrary installed binary matches the requested release. Source
+used here is tag v1.9.5 / d1be6fde11ac6e0407606b4e42fe72d34add8037, source archive
+SHA256 `645445da884df6dbd52b30f82d7be7c01d1767c938714e477e786b88d529e9f4`.
+Automatic source builds and platform runtime bundles remain packaging work.
+
+Later experiments remain separate: shorter external windows with explicit overlap
+merging; pyannote diarization plus timestamp alignment; and bounded-context MOSS
+with speaker correspondence across windows. Independent transcription/diarization
+steps need an explicit multi-input join in the planner. Windowed MOSS can keep the
+existing backend contract, with internal speaker reconciliation. Quantized MOSS ports
+require their own backend/quality validation; Whisper GGML quantization does not
+automatically apply to the joint MOSS checkpoint.
+
+Validation: `runs/dialogue8-whisper-bonsai-20261022/report.html` contains the full
+297.891-second recording, 108 timestamped plain segments, and a Spanish SOAP note.
+Wall time is 48.04 s: speech 36.78 s (native load 0.24 s), note 9.11 s; speech RTF
+is 0.123. No installation/downloads or detailed profiler are included. On the WSL
+CPU, Whisper uses six threads (5.93 average cores) and peaks at 704,577,536 bytes
+sampled RSS (671.9 MiB). Python peaks at 90,599,424 bytes (86.4 MiB); the owned
+Bonsai server peaks at 1,379,778,560 bytes (1.29 GiB), measured separately. Both
+owned native processes exited. These are CPU measurements; Mac/Windows hardware
+inference is unvalidated.
+
+Keep failures for inspection: `runs/dialogue8-whisper-small-q8-20261022/` exposed
+a 109 ms native timestamp overshoot; the adapter now preserves native timestamps
+with an explicit 0.5 s endpoint tolerance. Its sibling ending `-complete/` keeps
+the successful transcript and the failed Bonsai temperature-0.7 generation.
+Greedy decoding allows execution to finish, but note quality remains inadequate:
+Bonsai turns a conditional chest-pain warning into a confirmed symptom, mixes
+treatment into Objective, and appends repeated “No consta”. This smoke test is not
+a quality or diarization evaluation.
+
+Checks: 48 tests (47 pass, one opt-in live skip), lint/format and wheel/sdist build.
+The built base wheel runs the suite without Torch: 44 pass, four optional skips.
+No Python dependency changes. User notes and their README edit are unstaged.
+
+## Original refactor scope
+
 The first milestone is a readable local scribe core shared by Python, the CLI,
 future evaluation adapters, and a future application server. Evaluation datasets,
 judges, metrics, databases, microphone capture, and live streaming remain separate
@@ -10,9 +66,7 @@ work. Preserve `TODO`, `ARCHITECTURE_EVALUATION.md`, recordings, and existing ru
 ```python
 with open_workflow("moss_bonsai") as scribe:
     full_run = scribe.run(AudioFile("consultation.wav"))
-    speech = scribe.run(
-        AudioFile("consultation.wav"), output="diarized_transcript"
-    )
+    speech = scribe.run(AudioFile("consultation.wav"), output="diarized_transcript")
     note = scribe.run(speech.transcript)
     manual = scribe.run(Transcript.from_text("An arbitrary conversation"))
 ```

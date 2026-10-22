@@ -5,6 +5,10 @@ from ..downloads import PreparedStep
 
 
 def create_backend(step: StepConfig, prepared: PreparedStep):
+    if step.model.backend == "whisper_cpp":
+        from .whisper_cpp import WhisperCPP
+
+        return WhisperCPP(step, prepared)
     if step.model.backend == "http_generation":
         from .http_generation import HTTPGeneration
 

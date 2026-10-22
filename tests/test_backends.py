@@ -116,7 +116,13 @@ class PreparationTests(unittest.TestCase):
             self.assertEqual(len(list(root.iterdir())), 2)
 
     def test_presets_are_valid_and_demo_needs_no_external_runtime(self):
-        for name in ("moss_bonsai", "moss_bonsai_http", "bonsai_note", "demo"):
+        for name in (
+            "moss_bonsai",
+            "moss_bonsai_http",
+            "whisper_bonsai",
+            "bonsai_note",
+            "demo",
+        ):
             with open_workflow(name, prepare=False):
                 pass
         with open_workflow("demo") as session:

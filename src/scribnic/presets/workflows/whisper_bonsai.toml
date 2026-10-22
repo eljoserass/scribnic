@@ -1,0 +1,19 @@
+name = "whisper_bonsai"
+inputs = ["audio", "transcript"]
+default_output = "note"
+download_missing = true
+
+[steps.speech]
+model = "whisper_small_q8_0"
+runtime = "whisper_cpp"
+
+[steps.note]
+model = "bonsai_2_2b"
+runtime = "llama_cpp"
+template = "soap_es"
+source = "speech"
+
+# Greedy baseline: the recommended temperature 0.7 emitted a stray thinking tag
+# for the full dialogue8 plain transcript. Keep other workflows' defaults intact.
+[steps.note.model_settings]
+temperature = 0.0
