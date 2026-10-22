@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+from pathlib import Path
 from time import perf_counter
 from uuid import uuid4
 
@@ -17,7 +18,7 @@ from .nvidia_speech import model_provenance, parse_speech, speech_metrics
 class NemoCPP:
     """Run one native file/replay request; weights live for this CLI invocation."""
 
-    def __init__(self, step: StepConfig, prepared: PreparedStep):
+    def __init__(self, step: StepConfig, prepared: PreparedStep) -> None:
         """Retain prepared files without loading models or launching processes."""
         if prepared.binary is None or prepared.model_path is None:
             raise ValueError("NeMo-Speech.cpp needs its prepared binary and ASR model.")
@@ -27,7 +28,7 @@ class NemoCPP:
         self.provenance = model_provenance(step, prepared)
         self.binary_sha256 = sha256_file(prepared.binary)
 
-    def _command(self, source: AudioFile, output) -> list[str]:
+    def _command(self, source: AudioFile, output: Path) -> list[str]:
         """Map explicit model/runtime settings to the pinned CLI's argument API."""
         settings = self.step.runtime.settings
         command = [
@@ -108,7 +109,7 @@ class NemoCPP:
             },
         )
 
-    def _invoke(self, command: list[str], log) -> None:
+    def _invoke(self, command: list[str], log: Path) -> None:
         """Wait for our child and terminate it on timeout, interruption, or failure."""
         try:
             with log.open("w", encoding="utf-8") as stream:

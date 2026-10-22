@@ -11,7 +11,7 @@ import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .config import ModelConfig, RuntimeConfig, StepConfig
+from .config import ModelAsset, ModelConfig, RuntimeConfig, StepConfig
 
 
 def cache_directory() -> Path:
@@ -139,8 +139,8 @@ def _prepare_snapshot(model: ModelConfig, download: bool) -> Path:
 
 
 def prepare_model(
-    model: ModelConfig, runtime: RuntimeConfig, cache: Path, download: bool
-):
+    model: ModelConfig | ModelAsset, runtime: RuntimeConfig, cache: Path, download: bool
+) -> Path | None:
     """Prepare the format selected explicitly by a model/runtime configuration."""
     if runtime.engine == "transformers":
         return _prepare_snapshot(model, download)

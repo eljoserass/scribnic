@@ -12,6 +12,17 @@ PRESETS = Path(__file__).parent / "presets"
 
 
 @dataclass(frozen=True)
+class ModelAsset:
+    """A pinned companion checkpoint, without a standalone artifact contract."""
+
+    name: str
+    repository: str
+    revision: str
+    filename: str
+    sha256: str
+
+
+@dataclass(frozen=True)
 class ModelConfig:
     name: str
     backend: str
@@ -40,7 +51,7 @@ class StepConfig:
     template: Path | None = None
     source: str | None = None
     instruction: str | None = None
-    companions: dict[str, ModelConfig] = field(default_factory=dict)
+    companions: dict[str, ModelAsset] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -251,6 +262,18 @@ def _load_runtime(name: str, directory: Path, overrides: dict) -> RuntimeConfig:
     )
 
 
+def _load_asset(name: str, directory: Path) -> ModelAsset:
+    """Read a companion's weight descriptor without inventing an output artifact."""
+    data = _read_toml(_preset_path(name, "models", directory))
+    return ModelAsset(
+        name=data.get("name", name),
+        repository=data["repository"],
+        revision=data["revision"],
+        filename=data["filename"],
+        sha256=data["sha256"],
+    )
+
+
 def _load_step(name: str, data: dict, directory: Path) -> StepConfig:
     """Resolve a step and its explicitly named companion model presets."""
     template = None
@@ -269,7 +292,7 @@ def _load_step(name: str, data: dict, directory: Path) -> StepConfig:
         source=data.get("source"),
         instruction=template.read_text(encoding="utf-8").strip() if template else None,
         companions={
-            role: _load_model(preset, directory, {})
+            role: _load_asset(preset, directory)
             for role, preset in data.get("companions", {}).items()
         },
     )

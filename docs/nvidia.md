@@ -86,7 +86,7 @@ cache_gating = true
 [steps.speech.runtime_settings]
 device = "cpu"
 threads = 6
-profile_window_steps = 16
+profile_window_steps = 4
 profile_gpu = false
 ```
 
@@ -126,8 +126,10 @@ NeMo executes in the monitored application process. RTF is processing time divid
 by source-audio duration. It is not a quality score.
 
 `--profile` additionally captures NeMo Torch operators in compressed Perfetto
-traces under `profiles/`, including ASR encoder/decoder/joint ranges, the diarization
-encoder, and chunk/component phases. Exports happen at configured chunk boundaries;
+traces under `profiles/`, including ASR and diarization encoder ranges and
+chunk/component phases. Module ranges label forwards actually invoked through
+those modules; internal decoding methods and compiled regions remain visible as
+operators inside their parent phase. Exports happen at configured chunk boundaries;
 an offline component can still produce a large capture. Export overhead, net tensor
 allocations, activities, coverage, and aggregate operator totals are recorded in
 `*-profile.json` and displayed in HTML. Loading is outside the operator capture.

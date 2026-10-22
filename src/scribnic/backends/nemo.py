@@ -3,8 +3,9 @@
 import importlib.metadata
 import wave
 from contextlib import contextmanager
+from pathlib import Path
 from time import perf_counter
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Iterator
 from uuid import uuid4
 
 from ..artifacts import Artifact, AudioFile, StepOutput
@@ -22,7 +23,7 @@ if TYPE_CHECKING:
 class NemoSpeech:
     """Retain loaded models while creating fresh caches and speaker state per run."""
 
-    def __init__(self, step: StepConfig, prepared: PreparedStep):
+    def __init__(self, step: StepConfig, prepared: PreparedStep) -> None:
         """Retain pinned weight paths; import and load NeMo lazily on first use."""
         self.step = step
         self.prepared = prepared
@@ -87,7 +88,7 @@ class NemoSpeech:
         return perf_counter() - started
 
     @contextmanager
-    def _threads(self):
+    def _threads(self) -> Iterator[None]:
         """Restore the caller's Torch thread setting after inference or loading."""
         previous = self.torch.get_num_threads()
         self.torch.set_num_threads(int(self.step.runtime.settings.get("threads", 6)))
@@ -135,39 +136,53 @@ class NemoSpeech:
                 self.step.model.settings.get("sentence_gap_seconds", 1.0)
             ),
         )
-        overhead = capture.metadata.get("export_and_aggregation_seconds", 0)
         speech_metrics(
             self.step, elapsed_seconds=elapsed, audio_seconds=source.duration
         )
-        return StepOutput(
-            artifact,
-            {
-                "models": self.provenance,
-                "load_seconds": load_seconds,
-                "request_seconds": elapsed,
-                "real_time_factor": elapsed / source.duration,
-                "profile_export_seconds": overhead,
-                "phase_wall_seconds": self.phase_seconds,
-                "mode": mode,
-                "streaming_scope": "recorded WAV replay, no microphone or network ingestion",
-                "integration": "speaker-masked parallel ASR"
-                if mode == "streaming"
-                else "independent offline ASR and diarization with word-time attribution",
-                "runtime": {
-                    "engine": "nemo_python",
-                    "version": importlib.metadata.version("nemo-toolkit"),
-                    "source_revision": self.step.runtime.settings.get(
-                        "source_revision"
-                    ),
-                    "torch_version": self.torch.__version__,
-                    "device": str(self.device),
-                    "dtype": str(next(self.asr.parameters()).dtype),
-                    "threads": self.step.runtime.settings.get("threads", 6),
-                },
-                "native_output_path": str(output),
-                "profile": capture.metadata,
-            },
+        metadata = self._metadata(
+            source,
+            output_path=output,
+            load_seconds=load_seconds,
+            request_seconds=elapsed,
+            profile=capture.metadata,
         )
+        return StepOutput(artifact, metadata)
+
+    def _metadata(
+        self,
+        source: AudioFile,
+        *,
+        output_path: Path,
+        load_seconds: float,
+        request_seconds: float,
+        profile: dict,
+    ) -> dict[str, object]:
+        """Describe effective runtime, timing scope, and persisted diagnostics."""
+        mode = self.step.model.settings.get("mode", "offline")
+        return {
+            "models": self.provenance,
+            "load_seconds": load_seconds,
+            "request_seconds": request_seconds,
+            "real_time_factor": request_seconds / source.duration,
+            "profile_export_seconds": profile.get("export_and_aggregation_seconds", 0),
+            "phase_wall_seconds": self.phase_seconds,
+            "mode": mode,
+            "streaming_scope": "recorded WAV replay, no microphone or network ingestion",
+            "integration": "speaker-masked parallel ASR"
+            if mode == "streaming"
+            else "independent offline ASR and diarization with word-time attribution",
+            "runtime": {
+                "engine": "nemo_python",
+                "version": importlib.metadata.version("nemo-toolkit"),
+                "source_revision": self.step.runtime.settings.get("source_revision"),
+                "torch_version": self.torch.__version__,
+                "device": str(self.device),
+                "dtype": str(next(self.asr.parameters()).dtype),
+                "threads": self.step.runtime.settings.get("threads", 6),
+            },
+            "native_output_path": str(output_path),
+            "profile": profile,
+        }
 
     def _modules(self) -> tuple[tuple[object, str], ...]:
         """Identify expensive forwards without modifying NVIDIA's implementation."""
@@ -180,7 +195,7 @@ class NemoSpeech:
         return modules
 
     @contextmanager
-    def _phase(self, name: str):
+    def _phase(self, name: str) -> Iterator[None]:
         """Record host wall time, an OTel span, and a PyTorch phase label."""
         started = perf_counter()
         with (
@@ -273,7 +288,11 @@ class NemoSpeech:
         )
 
     def _stream_configuration(self, source: AudioFile) -> "DictConfig":
-        """Apply the documented Nemotron 3.5 masked-ASR geometry and cache settings."""
+        """Apply the documented masked-ASR geometry and cache settings.
+
+        Keep the coupled defaults together so their relationship can be reviewed
+        against NVIDIA's reference configuration without chasing tiny helpers.
+        """
         from nemo.collections.asr.parts.submodules.subsampling import FeatureStacking
         from nemo.collections.asr.parts.utils.multispk_transcribe_utils import (
             configure_diar_streaming,
@@ -338,7 +357,7 @@ class NemoSpeech:
         return ()
 
     def close(self) -> None:
-        """Release model references; no caches or artifacts survive into another run."""
+        """Release loaded model references when the owning session closes."""
         self.asr = None
         self.diarizer = None
 

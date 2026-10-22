@@ -9,9 +9,14 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
-from typing import Callable
+from types import ModuleType
+from typing import TYPE_CHECKING, Callable, Iterator
 
 from .storage import write_json
+
+if TYPE_CHECKING:
+    from torch import device as TorchDevice
+    from torch.nn import Module
 
 _directory: ContextVar[Path | None] = ContextVar(
     "scribnic_profile_directory", default=None
@@ -19,7 +24,7 @@ _directory: ContextVar[Path | None] = ContextVar(
 
 
 @contextmanager
-def profile_directory(directory: Path | None):
+def profile_directory(directory: Path | None) -> Iterator[None]:
     """Enable operator artifacts only inside this execution's output directory."""
     token = _directory.set(directory)
     try:
@@ -29,7 +34,9 @@ def profile_directory(directory: Path | None):
 
 
 @contextmanager
-def label_modules(modules: tuple[tuple[object, str], ...], torch):
+def label_modules(
+    modules: tuple[tuple["Module | None", str], ...], torch: ModuleType
+) -> Iterator[None]:
     """Label third-party forwards and remove every hook, including on failures."""
     with ExitStack() as cleanup:
         for module, label in modules:
@@ -38,7 +45,9 @@ def label_modules(modules: tuple[tuple[object, str], ...], torch):
         yield
 
 
-def _label_forward(module: object, label: str, torch, cleanup: ExitStack) -> None:
+def _label_forward(
+    module: "Module", label: str, torch: ModuleType, cleanup: ExitStack
+) -> None:
     """Attach a balanced range to one module, supporting nested forward calls."""
     contexts = []
 
@@ -126,6 +135,7 @@ class _ProfileWindows:
         return self.actions.RECORD
 
     def flush(self, profiler) -> None:
+        """Export one completed window and merge its numeric operator totals."""
         started = monotonic()
         name = f"{self.name}-trace-{len(self.traces):04d}.json.gz"
         logging.getLogger(__name__).info(
@@ -157,6 +167,7 @@ class _ProfileWindows:
         )
 
     def _export_trace(self, profiler, destination: Path) -> None:
+        """Compress a completed trace without retaining its full JSON in memory."""
         # Stream with low compression; PyTorch's gzip exporter prioritizes size.
         with tempfile.NamedTemporaryFile(
             dir=self.directory, suffix=".json", delete=False
@@ -215,20 +226,21 @@ class OperatorCapture:
 
 @contextmanager
 def operator_profile(
-    torch,
-    device,
+    torch: ModuleType,
+    device: "TorchDevice",
     *,
     name: str,
     scope: str,
     phase_prefix: str,
     include_gpu: bool = False,
     window_steps: int = 16,
-):
+) -> Iterator[OperatorCapture]:
     """Capture bounded operator windows and export Perfetto traces when requested.
 
     Advance once per streaming chunk or offline component. Loading is excluded.
     Export time is recorded separately; model inference must not include it in
-    estimates of unprofiled performance.
+    estimates of unprofiled performance. Keep setup and finalization together so
+    an exception still exports the last partial window and its error status.
     """
     directory = _directory.get()
     metadata = {}

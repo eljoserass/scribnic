@@ -12,4 +12,3 @@ language = "es-ES"
 mode = "offline"
 sentence_gap_seconds = 1.0
 max_speakers = 8
-

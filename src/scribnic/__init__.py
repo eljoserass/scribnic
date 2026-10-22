@@ -12,6 +12,7 @@ from .artifacts import (
     Transcript,
 )
 from .config import (
+    ModelAsset,
     ModelConfig,
     RuntimeConfig,
     StepConfig,
@@ -26,6 +27,7 @@ __all__ = [
     "ArtifactKind",
     "AudioFile",
     "DiarizedTranscript",
+    "ModelAsset",
     "ModelConfig",
     "Note",
     "RunResult",
