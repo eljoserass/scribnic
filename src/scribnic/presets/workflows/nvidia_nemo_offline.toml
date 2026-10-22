@@ -1,0 +1,31 @@
+name = "nvidia_nemo_offline"
+inputs = ["audio", "transcript", "diarized_transcript"]
+default_output = "note"
+download_missing = true
+
+[steps.speech]
+model = "nemotron_3_5_asr_nemo"
+runtime = "nemo_python"
+output = "diarized_transcript"
+
+[steps.speech.companions]
+diarization = "nemotron_3_diarization_nemo"
+
+[steps.speech.model_settings]
+mode = "offline"
+language = "es-ES"
+max_speakers = 8
+
+[steps.note]
+model = "bonsai_2_2b"
+runtime = "llama_cpp_prism"
+template = "soap_es"
+source = "speech"
+
+[steps.note.model_settings]
+temperature = 0.0
+
+
+# Avoid keeping Bonsai resident during the NeMo checkpoint loading peak.
+[steps.note.runtime_settings]
+lazy_load = true

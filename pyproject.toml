@@ -14,6 +14,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+nvidia = [
+    "nemo-toolkit[asr] @ git+https://github.com/NVIDIA-NeMo/Speech.git@16b0ff2584c6355c53cbd6c28f0f431a76b24956",
+]
 moss = [
     "accelerate>=1,<2",
     "huggingface-hub>=1,<2",
@@ -24,6 +27,9 @@ moss = [
 
 [dependency-groups]
 dev = ["ruff>=0.15,<1"]
+
+[tool.uv]
+environments = ["sys_platform == 'linux'", "sys_platform == 'darwin'", "sys_platform == 'win32'"]
 
 [tool.uv.sources]
 torch = [

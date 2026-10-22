@@ -1,0 +1,15 @@
+name = "nemotron_3_diarization_nemo"
+backend = "nvidia_speech"
+inputs = ["audio"]
+output = "transcript"
+repository = "nvidia/Nemotron-3-Diarization"
+revision = "f667ed73aee57d40cc39428eb768b4fd87a0a29e"
+filename = "Nemotron-3-Diarization.nemo"
+sha256 = "867c53f552998f772e5b5e5c082962ae85ee7ca5669c2bc17d7f615133d4e96d"
+
+[settings]
+language = "es-ES"
+mode = "offline"
+sentence_gap_seconds = 1.0
+max_speakers = 8
+

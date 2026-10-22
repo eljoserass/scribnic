@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 from helpers import MODEL, NOTE, note_server
 
@@ -27,6 +28,27 @@ def http_step(url: str):
 
 
 class HTTPBackendTests(unittest.TestCase):
+    def test_deferred_note_loading_checks_service_only_when_note_is_requested(self):
+        """A deferred service consumes no resources while the speech step loads."""
+        with note_server() as (url, _):
+            step = http_step(url)
+            step = replace(
+                step,
+                runtime=replace(
+                    step.runtime, settings=step.runtime.settings | {"lazy_load": True}
+                ),
+            )
+            with patch.object(HTTPGeneration, "_check_available") as check:
+                backend = HTTPGeneration(step, PreparedStep(Path("unused")))
+                self.assertIsNone(backend.client)
+                check.assert_not_called()
+                try:
+                    backend.run(Transcript.from_text("Tengo tos."))
+                    backend.run(Transcript.from_text("Tengo fiebre."))
+                    check.assert_called_once()
+                finally:
+                    backend.close()
+
     def test_bonsai_sampling_profile_and_supplied_plain_text(self):
         with note_server() as (url, requests):
             backend = HTTPGeneration(http_step(url), PreparedStep(Path("unused")))

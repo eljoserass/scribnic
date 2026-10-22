@@ -12,15 +12,25 @@ from ..runtimes import LlamaServer
 
 class HTTPGeneration:
     def __init__(self, step: StepConfig, prepared: PreparedStep):
-        from openai import OpenAI
-
+        """Configure generation, optionally deferring model loading until its step."""
         self.step = step
+        self.prepared = prepared
         self.server: LlamaServer | None = None
         self.model = str(step.model.settings.get("served_model", step.model.name))
         self.load_seconds = 0.0
+        self.client = None
+        if not step.runtime.settings.get("lazy_load", False):
+            self._load()
+
+    def _load(self) -> None:
+        """Start/check the configured service once and record its loading time."""
+        if self.client is not None:
+            return
+        from openai import OpenAI
+
         started = perf_counter()
-        base_url = self._endpoint(prepared)
-        settings = step.runtime.settings
+        base_url = self._endpoint(self.prepared)
+        settings = self.step.runtime.settings
         key_name = str(settings.get("api_key_env", "SCRIBNIC_API_KEY"))
         self.client = OpenAI(
             base_url=base_url,
@@ -102,6 +112,7 @@ class HTTPGeneration:
         return request
 
     def run(self, source: Artifact) -> StepOutput:
+        """Generate from supplied text, loading a deferred service only when needed."""
         from openai import OpenAIError
 
         if not isinstance(source, (Transcript, DiarizedTranscript)):
@@ -111,10 +122,10 @@ class HTTPGeneration:
         conversation = format_conversation(source)
         if not conversation.strip():
             raise ValueError("Cannot generate a note from an empty transcript.")
+        request = self._request(conversation)
+        self._load()
         try:
-            response = self.client.chat.completions.create(
-                **self._request(conversation)
-            )
+            response = self.client.chat.completions.create(**request)
         except OpenAIError as error:
             raise ValueError(f"Note generation failed: {error}") from error
         note = self._content(response)
@@ -154,9 +165,11 @@ class HTTPGeneration:
         return text.strip()
 
     def close(self) -> None:
+        """Close an initialized client and the native server owned by this backend."""
         try:
-            if hasattr(self, "client"):
+            if self.client is not None:
                 self.client.close()
+                self.client = None
         finally:
             if self.server is not None:
                 self.server.close()

@@ -2,6 +2,8 @@
 
 import json
 import tempfile
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import asdict
 from pathlib import Path
 
@@ -17,6 +19,27 @@ from .artifacts import (
 )
 
 SCHEMA_VERSION = 1
+_run_directory: ContextVar[Path | None] = ContextVar(
+    "scribnic_run_directory", default=None
+)
+
+
+@contextmanager
+def artifact_directory(directory: Path | None):
+    """Scope backend diagnostic files to the current persisted execution."""
+    token = _run_directory.set(directory)
+    try:
+        yield
+    finally:
+        _run_directory.reset(token)
+
+
+def diagnostic_path(name: str, *, cache: Path) -> Path:
+    """Place raw runtime outputs in the run, or the cache for unsaved calls."""
+    directory = _run_directory.get()
+    path = (directory / "runtime" if directory else cache / "logs") / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def artifact_to_dict(artifact: Artifact) -> dict:

@@ -6,8 +6,10 @@ import shutil
 import tempfile
 from contextlib import ExitStack, contextmanager, nullcontext
 from contextvars import ContextVar
+from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
+from typing import Callable
 
 from .storage import write_json
 
@@ -18,11 +20,40 @@ _directory: ContextVar[Path | None] = ContextVar(
 
 @contextmanager
 def profile_directory(directory: Path | None):
+    """Enable operator artifacts only inside this execution's output directory."""
     token = _directory.set(directory)
     try:
         yield
     finally:
         _directory.reset(token)
+
+
+@contextmanager
+def label_modules(modules: tuple[tuple[object, str], ...], torch):
+    """Label third-party forwards and remove every hook, including on failures."""
+    with ExitStack() as cleanup:
+        for module, label in modules:
+            if module is not None:
+                _label_forward(module, label, torch, cleanup)
+        yield
+
+
+def _label_forward(module: object, label: str, torch, cleanup: ExitStack) -> None:
+    """Attach a balanced range to one module, supporting nested forward calls."""
+    contexts = []
+
+    def before(*args: object) -> None:
+        """Open one range for this invocation."""
+        active = torch.profiler.record_function(label)
+        active.__enter__()
+        contexts.append(active)
+
+    def after(*args: object) -> None:
+        """Close the matching range even if the forward raised."""
+        contexts.pop().__exit__(None, None, None)
+
+    cleanup.callback(module.register_forward_pre_hook(before).remove)
+    cleanup.callback(module.register_forward_hook(after, always_call=True).remove)
 
 
 def _module_ranges(model, torch, stack: ExitStack, advance=None) -> None:
@@ -64,14 +95,28 @@ def _module_ranges(model, torch, stack: ExitStack, advance=None) -> None:
 class _ProfileWindows:
     """Flush completed windows and aggregate statistics without retaining events."""
 
-    def __init__(self, directory: Path, torch, steps: int, activities):
+    def __init__(
+        self,
+        directory: Path,
+        torch,
+        steps: int,
+        activities,
+        *,
+        name: str = "moss",
+        scope: str = "MOSS frontend, encoder, adaptor, prefill and decode; model loading excluded",
+        phase_prefix: str = "moss.",
+    ):
+        """Retain aggregate numbers and paths, never earlier windows' raw events."""
         self.directory = directory
         self.actions = torch.profiler.ProfilerAction
         self.steps = steps
         self.activities = [activity.name for activity in activities]
         self.traces: list[str] = []
         self.statistics: dict[str, dict] = {}
-        self.summary_path = directory / "moss-profile.json"
+        self.name = name
+        self.scope = scope
+        self.phase_prefix = phase_prefix
+        self.summary_path = directory / f"{name}-profile.json"
         self.export_and_aggregation_seconds = 0.0
 
     def schedule(self, step: int):
@@ -82,9 +127,9 @@ class _ProfileWindows:
 
     def flush(self, profiler) -> None:
         started = monotonic()
-        name = f"moss-trace-{len(self.traces):04d}.json.gz"
+        name = f"{self.name}-trace-{len(self.traces):04d}.json.gz"
         logging.getLogger(__name__).info(
-            "Profiling MOSS · exportando bloque %d", len(self.traces) + 1
+            "Profiling %s · exportando bloque %d", self.name, len(self.traces) + 1
         )
         self._export_trace(profiler, self.directory / name)
         for event in profiler.key_averages():
@@ -108,7 +153,7 @@ class _ProfileWindows:
         self.export_and_aggregation_seconds += monotonic() - started
         self.save("running")
         logging.getLogger(__name__).info(
-            "Profiling MOSS · bloque guardado · %.1f s", monotonic() - started
+            "Profiling %s · bloque guardado · %.1f s", self.name, monotonic() - started
         )
 
     def _export_trace(self, profiler, destination: Path) -> None:
@@ -129,10 +174,11 @@ class _ProfileWindows:
             temporary.unlink(missing_ok=True)
 
     def save(self, status: str) -> None:
+        """Persist aggregates after each export, including interrupted captures."""
         phases = []
         operators = []
         for name, row in self.statistics.items():
-            if name.startswith("moss."):
+            if name.startswith(self.phase_prefix):
                 phases.append(row)
             elif not name.startswith("ProfilerStep"):
                 operators.append(row)
@@ -142,7 +188,8 @@ class _ProfileWindows:
             {
                 "schema_version": 1,
                 "status": status,
-                "scope": "MOSS frontend, encoder, adaptor, prefill and decode; model loading excluded",
+                "scope": self.scope,
+                "name": self.name,
                 "activities": self.activities,
                 "window_steps": self.steps,
                 "record_shapes": True,
@@ -158,14 +205,35 @@ class _ProfileWindows:
         )
 
 
+@dataclass
+class OperatorCapture:
+    """A scoped profiler whose caller advances at meaningful inference boundaries."""
+
+    metadata: dict
+    advance: Callable[[], None]
+
+
 @contextmanager
-def torch_profile(
-    model, torch, device, *, include_gpu: bool = False, window_steps: int = 16
+def operator_profile(
+    torch,
+    device,
+    *,
+    name: str,
+    scope: str,
+    phase_prefix: str,
+    include_gpu: bool = False,
+    window_steps: int = 16,
 ):
+    """Capture bounded operator windows and export Perfetto traces when requested.
+
+    Advance once per streaming chunk or offline component. Loading is excluded.
+    Export time is recorded separately; model inference must not include it in
+    estimates of unprofiled performance.
+    """
     directory = _directory.get()
     metadata = {}
     if directory is None:
-        yield metadata
+        yield OperatorCapture(metadata, lambda: None)
         return
     directory.mkdir(parents=True, exist_ok=True)
     activities = [torch.profiler.ProfilerActivity.CPU]
@@ -175,7 +243,15 @@ def torch_profile(
             activities.append(torch.profiler.ProfilerActivity.CUDA)
     if type(window_steps) is not int or window_steps < 1:
         raise ValueError("profile_window_steps must be a positive integer.")
-    windows = _ProfileWindows(directory, torch, window_steps, activities)
+    windows = _ProfileWindows(
+        directory,
+        torch,
+        window_steps,
+        activities,
+        name=name,
+        scope=scope,
+        phase_prefix=phase_prefix,
+    )
     metal = (
         torch.mps.profiler.profile()
         if include_gpu and device.type == "mps"
@@ -191,27 +267,67 @@ def torch_profile(
     )
     completed = False
     try:
-        with ExitStack() as stack:
-            _module_ranges(model, torch, stack, profiler.step)
-            stack.enter_context(profiler)
+        with profiler:
             with metal:
-                yield metadata
+                yield OperatorCapture(metadata, profiler.step)
                 completed = True
     finally:
         windows.save("success" if completed else "error")
-    metadata.update(
-        {
-            "trace_path": str(directory / windows.traces[0])
-            if windows.traces
-            else None,
-            "summary_path": str(windows.summary_path),
-            "trace_count": len(windows.traces),
-            "format": "chrome_trace_gzip_windows",
-            "activities": [activity.name for activity in activities],
-            "scope": "MOSS frontend, encoder, adaptor, prefill and decode",
-        }
-    )
+        metadata.update(
+            {
+                "trace_path": str(directory / windows.traces[0])
+                if windows.traces
+                else None,
+                "summary_path": str(windows.summary_path),
+                "trace_count": len(windows.traces),
+                "format": "chrome_trace_gzip_windows",
+                "activities": [activity.name for activity in activities],
+                "scope": scope,
+                "export_and_aggregation_seconds": windows.export_and_aggregation_seconds,
+            }
+        )
     if include_gpu and device.type == "mps":
         metadata["metal_capture"] = (
             "Use Instruments to capture the emitted Metal signposts."
         )
+
+
+@contextmanager
+def torch_profile(
+    model, torch, device, *, include_gpu: bool = False, window_steps: int = 16
+):
+    """Keep the MOSS adapter's existing profiling contract and forward labels."""
+    with operator_profile(
+        torch,
+        device,
+        name="moss",
+        scope="MOSS frontend, encoder, adaptor, prefill and decode; model loading excluded",
+        phase_prefix="moss.",
+        include_gpu=include_gpu,
+        window_steps=window_steps,
+    ) as capture:
+        with ExitStack() as stack:
+            _module_ranges(model, torch, stack, capture.advance)
+            yield capture.metadata
+
+
+def native_profile(name: str, *, log_path: Path) -> dict:
+    """Declare native operator coverage explicitly instead of producing fake traces."""
+    directory = _directory.get()
+    if directory is None:
+        return {}
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{name}-native-profile.json"
+    metadata = {
+        "schema_version": 1,
+        "status": "operator_capture_unavailable",
+        "name": name,
+        "scope": "Owned native process RSS/CPU samples and workflow spans; C++ operators are not captured by torch.profiler",
+        "log_path": str(log_path),
+        "operators": [],
+        "phases": [],
+        "traces": [],
+        "summary_path": str(path),
+    }
+    write_json(path, metadata)
+    return metadata

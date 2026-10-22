@@ -8,7 +8,7 @@ import tarfile
 import tempfile
 import urllib.request
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .config import ModelConfig, RuntimeConfig, StepConfig
@@ -141,9 +141,10 @@ def _prepare_snapshot(model: ModelConfig, download: bool) -> Path:
 def prepare_model(
     model: ModelConfig, runtime: RuntimeConfig, cache: Path, download: bool
 ):
+    """Prepare the format selected explicitly by a model/runtime configuration."""
     if runtime.engine == "transformers":
         return _prepare_snapshot(model, download)
-    if runtime.engine not in {"llama_cpp", "whisper_cpp"}:
+    if runtime.engine not in {"llama_cpp", "whisper_cpp", "nemo_cpp", "nemo_python"}:
         return None
     if not all((model.repository, model.revision, model.filename, model.sha256)):
         raise ValueError(f"Model {model.name} needs a pinned file and checksum.")
@@ -161,6 +162,7 @@ class PreparedStep:
     model_path: Path | None = None
     binary: Path | None = None
     vad_model_path: Path | None = None
+    companions: dict[str, Path] = field(default_factory=dict)
 
 
 def prepare_vad(step: StepConfig, cache: Path, download: bool) -> Path | None:
@@ -183,11 +185,18 @@ class ResourceManager:
         self._prepared: dict[str, PreparedStep] = {}
 
     def prepare(self, step: StepConfig) -> PreparedStep:
+        """Download versioned weights, companions, and native runtimes as needed."""
         if step.name not in self._prepared:
             model = prepare_model(step.model, step.runtime, self.cache, self.download)
             binary = None
-            if step.runtime.engine in {"llama_cpp", "whisper_cpp"}:
+            if step.runtime.engine in {"llama_cpp", "whisper_cpp", "nemo_cpp"}:
                 binary = prepare_binary(step.runtime, self.cache, self.download)
             vad = prepare_vad(step, self.cache, self.download)
-            self._prepared[step.name] = PreparedStep(self.cache, model, binary, vad)
+            companions = {
+                role: prepare_model(asset, step.runtime, self.cache, self.download)
+                for role, asset in step.companions.items()
+            }
+            self._prepared[step.name] = PreparedStep(
+                self.cache, model, binary, vad, companions
+            )
         return self._prepared[step.name]

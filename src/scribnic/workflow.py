@@ -172,11 +172,15 @@ class WorkflowSession:
                 return self._execute(state, plan, store, profile)
 
     def _execute(self, state: _Execution, plan, store, profile: bool) -> RunResult:
+        """Execute a plan with durable diagnostics and scoped resource monitoring."""
+        from .storage import artifact_directory
+
         state.trace_id = trace_id()
         monitor = ResourceMonitor(state.run_id, self._runtime_pids)
         profiles = store.directory / "profiles" if profile else None
         try:
-            with monitor, profile_directory(profiles):
+            directory = store.directory if store else None
+            with monitor, profile_directory(profiles), artifact_directory(directory):
                 self._validate_source(state)
                 if store is not None:
                     store.save(state.snapshot())

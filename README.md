@@ -2,8 +2,8 @@
 
 Núcleo local de escriba clínico: un workflow declara cómo llegar de una entrada a
 una nota. La misma API sirve para Python, CLI y un futuro evaluador o servidor.
-Actualmente incluye MOSS-Transcribe-Diarize, Whisper.cpp y Bonsai mediante HTTP.
-NeMo, Nemotron, Qwen-ASR y VibeVoice se han retirado.
+Actualmente incluye MOSS-Transcribe-Diarize, Whisper.cpp, Nemotron multilingüe con
+diarización mediante NeMo/PyTorch o NeMo-Speech.cpp, y Bonsai mediante HTTP.
 
 ## Instalar y ejecutar
 
@@ -57,6 +57,12 @@ ffmpeg -i entrada.mp3 -ac 1 -ar 16000 -c:a pcm_s16le consulta.wav
 | `moss_bonsai` | MOSS / Transformers | Bonsai / llama-server gestionado |
 | `moss_bonsai_http` | MOSS / Transformers | Bonsai / endpoint existente |
 | `bonsai_note` | Entrada de texto | Bonsai / llama-server gestionado |
+| `nvidia_cpp_offline` / `nvidia_cpp_streaming` | Nemotron 3.5 ASR + Nemotron 3 Diarization / C++ oficial | Bonsai / Prism |
+| `nvidia_nemo_offline` / `nvidia_nemo_streaming` | Los mismos modelos / NeMo Python opcional | Bonsai / Prism |
+
+Los workflows NVIDIA instalan automáticamente los pesos y, para C++, el runtime
+oficial versionado. El extra `[nvidia]` añade la referencia Python con ASR por
+hablante mediante máscaras. [Instalación, modos y profiling](docs/nvidia.md).
 
 ### Whisper.cpp sin diarización
 
@@ -334,8 +340,9 @@ externa abrupta, el último checkpoint puede seguir indicando `running`.
 | `report.html` | Vista local, sin servidor ni recursos web externos. |
 | `telemetry/*.jsonl` | Trazas, métricas y logs en formato OTLP JSONL real. |
 | `note-metrics.prom` | Métricas nativas de llama-server, cuando están disponibles. |
-| `profiles/moss-profile.json` | Resumen agregado por operador y fase, y lista de bloques. |
-| `profiles/moss-trace-*.json.gz` | Captura continua de operadores en bloques comprimidos para Perfetto. |
+| `runtime/*` | Respuestas y logs nativos de los backends NVIDIA. |
+| `profiles/*-profile.json` | Resumen de operadores/fases y lista de trazas, o cobertura nativa explícita. |
+| `profiles/*-trace-*.json.gz` | Captura de operadores de MOSS/NeMo en bloques para Perfetto. |
 
 Se muestrean RSS, tiempo de CPU y cores equivalentes de Scribnic y los runtimes
 locales que posee. Se conserva el pico de memoria asignada/reservada por Torch en

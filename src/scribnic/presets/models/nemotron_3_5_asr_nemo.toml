@@ -1,0 +1,15 @@
+name = "nemotron_3_5_asr_nemo"
+backend = "nvidia_speech"
+inputs = ["audio"]
+output = "transcript"
+repository = "nvidia/nemotron-3.5-asr-streaming-0.6b"
+revision = "1c8deaecc64b91f034d73e08dd8b64625eb3395d"
+filename = "nemotron-3.5-asr-streaming-0.6b.nemo"
+sha256 = "210214ed94039bf6bfbb9a047c7fa289628db75b103e2bf6381fa78285436a74"
+
+[settings]
+language = "es-ES"
+mode = "offline"
+sentence_gap_seconds = 1.0
+max_speakers = 8
+

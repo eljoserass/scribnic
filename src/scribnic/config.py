@@ -3,7 +3,7 @@
 import json
 import math
 import tomllib
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
 from .artifacts import ARTIFACT_KINDS, ArtifactKind
@@ -40,6 +40,7 @@ class StepConfig:
     template: Path | None = None
     source: str | None = None
     instruction: str | None = None
+    companions: dict[str, ModelConfig] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -124,6 +125,66 @@ def validate_settings(step: StepConfig) -> None:
     for key in ("vad", "word_timestamps"):
         if key in step.model.settings and type(step.model.settings[key]) is not bool:
             raise ValueError(f"{step.name}.{key} must be true or false.")
+    if step.model.backend == "nvidia_speech":
+        _validate_nvidia(step)
+
+
+def _validate_nvidia(step: StepConfig) -> None:
+    """Check NVIDIA capability and mode choices before downloading weights."""
+    if step.runtime.engine not in {"nemo_cpp", "nemo_python"}:
+        raise ValueError("NVIDIA speech requires nemo_cpp or nemo_python.")
+    if step.model.settings.get("mode", "offline") not in {"offline", "streaming"}:
+        raise ValueError("NVIDIA speech mode must be offline or streaming.")
+    if step.model.output not in {"transcript", "diarized_transcript"}:
+        raise ValueError("NVIDIA speech produces transcript or diarized_transcript.")
+    if (
+        step.model.output == "diarized_transcript"
+        and "diarization" not in step.companions
+    ):
+        raise ValueError("Diarized NVIDIA speech needs a diarization companion model.")
+    maximum = step.model.settings.get("max_speakers", 8)
+    if type(maximum) is not int or not 1 <= maximum <= 8:
+        raise ValueError("max_speakers must be an integer between 1 and 8.")
+    if step.runtime.engine == "nemo_cpp" and maximum != 8:
+        raise ValueError(
+            "NeMo-Speech.cpp uses the model's fixed eight-speaker capacity; max_speakers is adjustable only in nemo_python."
+        )
+    if (
+        step.runtime.engine == "nemo_python"
+        and step.model.settings.get("mode") == "streaming"
+        and step.model.output != "diarized_transcript"
+    ):
+        raise ValueError(
+            "NeMo masked streaming needs diarized_transcript output and a diarization companion."
+        )
+    suffix = ".gguf" if step.runtime.engine == "nemo_cpp" else ".nemo"
+    for model in (step.model, *step.companions.values()):
+        if not model.filename or not model.filename.endswith(suffix):
+            raise ValueError(f"{step.runtime.engine} requires {suffix} model files.")
+    options = step.model.settings.get("streaming", {})
+    allowed = {
+        "fifo_len",
+        "spkcache_len",
+        "spkcache_update_period",
+        "cache_gating",
+        "cache_gating_buffer_size",
+        "binary_diar_preds",
+        "fix_prev_words_count",
+        "update_prev_words_sentence",
+        "ignored_initial_frame_steps",
+    }
+    if not isinstance(options, dict) or options.keys() - allowed:
+        raise ValueError(
+            "Unknown NeMo streaming settings; mask strategy and input paths are fixed by the adapter."
+        )
+    for key, value in options.items():
+        if key in {"cache_gating", "binary_diar_preds"}:
+            if type(value) is not bool:
+                raise ValueError(f"{key} must be true or false.")
+        else:
+            _validate_number(step, key, value, integer=True, allow_zero=False)
+    gap = step.model.settings.get("sentence_gap_seconds", 1.0)
+    _validate_number(step, "sentence_gap_seconds", gap, integer=False, allow_zero=False)
 
 
 def _read_toml(path: Path) -> dict:
@@ -191,18 +252,26 @@ def _load_runtime(name: str, directory: Path, overrides: dict) -> RuntimeConfig:
 
 
 def _load_step(name: str, data: dict, directory: Path) -> StepConfig:
+    """Resolve a step and its explicitly named companion model presets."""
     template = None
     if data.get("template"):
         template = _preset_path(data["template"], "notes", directory)
+    model = _load_model(data["model"], directory, data.get("model_settings", {}))
+    if "output" in data:
+        model = replace(model, output=artifact_kind(data["output"]))
     return StepConfig(
         name=name,
-        model=_load_model(data["model"], directory, data.get("model_settings", {})),
+        model=model,
         runtime=_load_runtime(
             data["runtime"], directory, data.get("runtime_settings", {})
         ),
         template=template,
         source=data.get("source"),
         instruction=template.read_text(encoding="utf-8").strip() if template else None,
+        companions={
+            role: _load_model(preset, directory, {})
+            for role, preset in data.get("companions", {}).items()
+        },
     )
 
 

@@ -1,0 +1,30 @@
+name = "nemo_cpp"
+engine = "nemo_cpp"
+
+[settings]
+distribution = "NVIDIA/NeMo-Speech.cpp"
+release = "v0.2.0"
+device = "auto"
+threads = 6
+timeout = 600
+
+[assets.linux-x86_64]
+url = "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.2.0/nemo-speech-0.2.0-linux-x86_64-cpu.tar.gz"
+sha256 = "f396057150f1b774935c7414fd32ebc04195a795a34120d78d8c9ecefa1b7507"
+binary = "nemo-speech-0.2.0-linux-x86_64-cpu/bin/nemo-speech"
+
+[assets.linux-arm64]
+url = "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.2.0/nemo-speech-0.2.0-linux-aarch64-cpu.tar.gz"
+sha256 = "ac50694d4729f9eae390a9851d38f51269d9af9829b535325539090a3b95c787"
+binary = "nemo-speech-0.2.0-linux-aarch64-cpu/bin/nemo-speech"
+
+[assets.darwin-arm64]
+url = "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.2.0/nemo-speech-0.2.0-macos-aarch64-metal.tar.gz"
+sha256 = "5cb02ba7c04f0b5585ce5cde9c830be5f0b7dfb4c83083c500109c381b4f2da9"
+binary = "nemo-speech-0.2.0-macos-aarch64-metal/bin/nemo-speech"
+
+[assets.windows-x86_64]
+url = "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.2.0/nemo-speech-0.2.0-windows-x86_64-cpu.zip"
+sha256 = "82c80451086e86194aba9af19f800da77cd66d1c28d993d0efceffd6cdb49bb8"
+binary = "nemo-speech-0.2.0-windows-x86_64-cpu/bin/nemo-speech.exe"
+
