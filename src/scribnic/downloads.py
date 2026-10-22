@@ -160,6 +160,20 @@ class PreparedStep:
     cache: Path
     model_path: Path | None = None
     binary: Path | None = None
+    vad_model_path: Path | None = None
+
+
+def prepare_vad(step: StepConfig, cache: Path, download: bool) -> Path | None:
+    """Prepare the optional Silero asset only when the speech step enables VAD."""
+    if not step.model.settings.get("vad", False):
+        return None
+    asset = step.model.settings.get("vad_model")
+    required = ("name", "repository", "revision", "filename", "sha256")
+    if not isinstance(asset, dict) or not all(asset.get(key) for key in required):
+        raise ValueError("VAD needs a versioned vad_model asset with its SHA256.")
+    path = cache / "models" / asset["name"] / asset["revision"] / asset["filename"]
+    url = f"https://huggingface.co/{asset['repository']}/resolve/{asset['revision']}/{asset['filename']}"
+    return download_file(url, path, asset["sha256"], allowed=download)
 
 
 class ResourceManager:
@@ -174,5 +188,6 @@ class ResourceManager:
             binary = None
             if step.runtime.engine in {"llama_cpp", "whisper_cpp"}:
                 binary = prepare_binary(step.runtime, self.cache, self.download)
-            self._prepared[step.name] = PreparedStep(self.cache, model, binary)
+            vad = prepare_vad(step, self.cache, self.download)
+            self._prepared[step.name] = PreparedStep(self.cache, model, binary, vad)
         return self._prepared[step.name]

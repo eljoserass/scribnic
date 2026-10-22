@@ -2,8 +2,8 @@
 
 Núcleo local de escriba clínico: un workflow declara cómo llegar de una entrada a
 una nota. La misma API sirve para Python, CLI y un futuro evaluador o servidor.
-Actualmente incluye MOSS-Transcribe-Diarize, Bonsai mediante HTTP y una demo sin
-modelos. NeMo, Nemotron, Qwen-ASR y VibeVoice se han retirado.
+Actualmente incluye MOSS-Transcribe-Diarize, Whisper.cpp y Bonsai mediante HTTP.
+NeMo, Nemotron, Qwen-ASR y VibeVoice se han retirado.
 
 ## Instalar y ejecutar
 
@@ -35,11 +35,9 @@ La instalación base evita Torch y Transformers:
 
 ```bash
 uv sync --locked
-uv run scribnic run conversacion.txt --workflow demo
 uv run scribnic run conversacion.txt --workflow bonsai_note
 ```
 
-`demo` produce salidas **inventadas**, identificadas en terminal e informe.
 `bonsai_note` ejecuta Bonsai real sin instalar MOSS. Para instalar un wheel como
 cliente: `pip install scribnic-0.1.0-py3-none-any.whl`, o añade `[moss]` para voz.
 Ruff está en el grupo de desarrollo; `uv sync --no-dev` lo excluye.
@@ -54,15 +52,18 @@ ffmpeg -i entrada.mp3 -ac 1 -ar 16000 -c:a pcm_s16le consulta.wav
 
 | Workflow | Voz | Nota |
 | --- | --- | --- |
-| `whisper_bonsai` | Whisper small multilingüe Q8_0 / whisper-cli | Bonsai / llama-server gestionado |
+| `whisper_bonsai` | Whisper small multilingüe Q8_0 / whisper-server | Bonsai / llama-server Prism |
+| `whisper_bonsai_vad` | El mismo Whisper con Silero VAD | Bonsai / llama-server Prism |
 | `moss_bonsai` | MOSS / Transformers | Bonsai / llama-server gestionado |
 | `moss_bonsai_http` | MOSS / Transformers | Bonsai / endpoint existente |
 | `bonsai_note` | Entrada de texto | Bonsai / llama-server gestionado |
-| `demo` | Salidas inventadas | Salida inventada |
 
 ### Whisper.cpp sin diarización
 
 `whisper_bonsai` conecta `audio → transcript → note` usando el núcleo existente.
+Whisper y Bonsai usan servidores HTTP nativos en loopback, con el mismo manejo de
+arranque, health check, logs, propiedad del proceso y cierre. El modelo de voz
+permanece cargado entre llamadas de una sesión; solo se sube el WAV por request.
 El modelo es Whisper **small multilingüe Q8_0**, con idioma español y beam size 5.
 Los pesos (264 MB) se descargan con revisión y SHA256 fijados. No requiere
 `[moss]`, Torch, Transformers ni bindings Python de Whisper.cpp.
@@ -71,7 +72,7 @@ recomendado de temperatura 0,7 devolvió una etiqueta de thinking en la prueba c
 texto sin hablantes. El fallo original se conserva y los otros presets mantienen
 su perfil publicado. No se filtra ni se oculta ese texto para aceptar una nota.
 
-Esta primera integración requiere un **`whisper-cli` externo** en `PATH` o indicado
+Esta integración requiere un **`whisper-server` externo** en `PATH` o indicado
 por `SCRIBNIC_WHISPER_CPP_BINARY`. `prepare` descarga pesos y comprueba el ejecutable;
 todavía no instala ni compila Whisper.cpp automáticamente. La versión probada es
 `v1.9.5`, commit `d1be6fde11ac6e0407606b4e42fe72d34add8037`.
@@ -80,11 +81,11 @@ Para compilarlo necesitas Git, CMake y un compilador C/C++:
 ```bash
 git clone --depth 1 --branch v1.9.5 https://github.com/ggml-org/whisper.cpp.git /ruta/whisper.cpp
 cmake -S /ruta/whisper.cpp -B /ruta/whisper.cpp/build -DCMAKE_BUILD_TYPE=Release
-cmake --build /ruta/whisper.cpp/build --target whisper-cli --config Release -j 6
-export SCRIBNIC_WHISPER_CPP_BINARY=/ruta/whisper.cpp/build/bin/whisper-cli
+cmake --build /ruta/whisper.cpp/build --target whisper-server --config Release -j 6
+export SCRIBNIC_WHISPER_CPP_BINARY=/ruta/whisper.cpp/build/bin/whisper-server
 ```
 
-Si `whisper-cli` ya está en `PATH`, puedes ejecutar directamente:
+Si `whisper-server` ya está en `PATH`, puedes ejecutar directamente:
 
 ```bash
 uv run scribnic prepare --workflow whisper_bonsai
@@ -97,11 +98,22 @@ uv run scribnic run ./data/examples/dialogue8.wav --workflow whisper_bonsai \
 
 Para conservar un entorno ya sincronizado con extras, usa `uv run --no-sync`.
 El resultado incluye `transcript.json`, nota, informe y telemetría de CPU/RAM del
-proceso nativo. Los logs y el JSON nativo completo se conservan en la caché;
-sus rutas, el hash del ejecutable y los tiempos nativos quedan en `run.json`.
+proceso nativo. El endpoint usa multipart y `verbose_json`, con segmentos y palabras.
+Los logs y la respuesta nativa se conservan en la caché; sus rutas, el hash del
+ejecutable, tiempo de carga, tiempo del request y RTF quedan en `run.json`.
+RTF = segundos de procesamiento / segundos de audio. También se exportan histogramas
+OTel `scribnic.speech.processing.duration`, `scribnic.speech.audio.duration` y
+`scribnic.speech.real_time_factor`.
 Los timestamps originales se conservan, tolerando hasta 0,5 s de exceso sobre el
-último sample. No se inventan hablantes. Cada llamada carga el modelo en un nuevo
-proceso `whisper-cli`, que se cierra también ante error, timeout o interrupción.
+último sample. No se inventan hablantes. La sesión cierra su servidor al salir y
+un request fallido cierra su runtime. Las configuraciones de voz se registran.
+
+Whisper-server v1.9.5 no expone un endpoint Prometheus `/metrics`. Sus tiempos de
+encoder/decoder son acumulados y se imprimen en el log al cerrar el servidor;
+no se presentan como tiempos nativos por request. Los tiempos HTTP/RTF y CPU/RAM
+son medidas de Scribnic. llama-server Prism sí proporciona sus métricas nativas.
+El total nativo de Whisper incluye la vida del contexto y puede incluir esperas;
+para latencia de voz usa el tiempo del request.
 
 En un workflow propio puedes ajustar:
 
@@ -114,7 +126,7 @@ beam_size = 5
 threads = 6
 use_gpu = false # "auto" solicita GPU en macOS; CPU en las demás plataformas.
 timeout = 600
-# binary = "/ruta/al/whisper-cli"
+# binary = "/ruta/al/whisper-server"
 ```
 
 Esta etapa no produce `diarized_transcript`. Whisper.cpp ya procesa el audio
@@ -124,12 +136,50 @@ el archivo en bloques. `--length`, `--step` y `--keep` pertenecen al ejemplo de
 micrófono `whisper-stream`; no son flags de `scribnic run`. `--profile` no captura
 operadores C++ de Whisper: sí se conserva la telemetría normal y sus tiempos nativos.
 
-Prueba completa en WSL/CPU, sin profiler detallado:
-`runs/dialogue8-whisper-bonsai-20261022/report.html`. Audio de 297,9 s, 108 segmentos,
-36,8 s de transcripción y 9,1 s de nota; total 48,0 s, sin instalación ni descarga.
-Pico RSS muestreado por proceso: Whisper 672 MiB, Python 86 MiB, Bonsai 1,29 GiB.
-La nota sigue teniendo errores: convirtió una advertencia condicional en un síntoma
-confirmado y repitió «No consta». Se conserva como predicción para evaluación.
+Prueba completa del servidor en WSL/CPU:
+`runs/dialogue8-whisper-server-20261022/report.html`. Audio de 297,9 s,
+37,1 s de transcripción y 9,2 s de nota; total 49,3 s, sin instalación ni descarga.
+La nota sigue teniendo errores de contenido. El experimento anterior con CLI se
+conserva en `runs/dialogue8-whisper-bonsai-20261022/`.
+
+### VAD y ventanas
+
+VAD detecta dónde hay voz. Whisper.cpp usa un Silero VAD adicional de 885 KB,
+descargado con revisión y SHA256 fijados **solo cuando se activa**. No identifica
+hablantes ni elimina ruido de fondo. Prueba el preset:
+
+```bash
+uv run --no-sync scribnic run ./data/examples/dialogue8.wav --workflow whisper_bonsai_vad
+```
+
+Los controles nativos se configuran en el workflow, con unidades explícitas:
+
+```toml
+[steps.speech.model_settings]
+vad = true
+vad_threshold = 0.5
+vad_min_speech_duration_ms = 250
+vad_min_silence_duration_ms = 100
+vad_max_speech_duration_s = 30.0 # Opcional; limita tramos VAD, no requests.
+vad_speech_pad_ms = 30
+vad_samples_overlap = 0.1 # Segundos.
+```
+
+Los defaults son los del modelo nativo. Padding y solape conservan algo de audio
+en los bordes; umbrales o duraciones mínimas agresivos pueden perder respuestas
+breves como «sí» o «no». VAD puede ahorrar trabajo si hay silencios, pero requiere
+comparar también el texto: no garantiza más velocidad ni mayor precisión.
+El runtime restaura timestamps del audio original; Scribnic conserva esos tiempos.
+`vad_max_speech_duration_s` no implementa ventanas de inferencia de ese tamaño.
+La lectura por partes, el solape de requests y su unión siguen siendo otro trabajo.
+Nuestro backend MOSS de Transformers no aplica VAD. Añadirlo requeriría preservar
+el mapa temporal y comprobar su efecto sobre el contexto de hablantes.
+
+Comparación exploratoria sobre `dialogue8` completo: sin VAD, voz 37,1 s;
+con VAD, voz 38,1 s. Silero detectó 59 tramos y 285,62 s de voz de los 297,89 s
+originales. No se observó ahorro en este caso. La corrida con VAD coincidió con
+las pruebas unitarias durante sus primeros segundos; no es un benchmark controlado.
+Sus predicciones y métricas están en `runs/dialogue8-whisper-server-vad-20261022/`.
 
 ### Otros workflows y configuración
 
@@ -187,7 +237,7 @@ device = "cpu"
 
 [steps.note]
 model = "bonsai_2_2b"
-runtime = "llama_cpp"
+runtime = "llama_cpp_prism"
 template = "soap_es" # También puede ser un archivo Markdown relativo al workflow.
 source = "speech"
 
@@ -208,6 +258,12 @@ El preset de Bonsai conserva el [perfil publicado para modelos pequeños de Pris
 El contexto de llama-server es 8192. El límite preventivo de 12000 caracteres
 no mide tokens; las entradas largas se rechazan sin truncar. No hay resumen por
 fragmentos todavía. Una salida cortada por límite de tokens tampoco se acepta.
+
+El preset `llama_cpp_prism` declara la distribución Prism explícitamente; su
+`engine = "llama_cpp"` describe la familia de runtime y la interfaz HTTP.
+Nuestro archivo Bonsai PQ2_0 requiere el fork y sus transformaciones Hadamard;
+no se debe sustituir por un llama-server upstream sin ese soporte. En workflows
+propios que usaban el antiguo preset `llama_cpp`, cambia el nombre del runtime.
 
 ## API Python y futuros evals
 
@@ -301,6 +357,10 @@ formas de entrada, asignaciones de tensores y tiempos por operador; el resumen y
 los operadores más costosos aparecen también en `report.html`. La memoria neta
 por operador es un balance de asignaciones, no un pico de RAM o VRAM.
 
+El checkpoint llama `whisper_encoder` a su atributo Python
+(`model.model.whisper_encoder`). `moss.encoder` es la etiqueta de esa fase en la
+traza; los puntos agrupan nombres de telemetría y no expresan atributos Python.
+
 Para perfilar `dialogue8` completo, elige un directorio nuevo:
 
 ```bash
@@ -357,8 +417,8 @@ src/scribnic/
   config.py / planning.py     Cargar configuración y resolver productores
   workflow.py                 Sesión, ejecución y propiedad de los backends
   audio.py / notes.py          Validar WAV y formatear la entrada de la nota
-  downloads.py / runtimes.py   Caché versionada y ciclo de vida de llama-server
-  backends/                   MOSS, generación HTTP y demo
+  downloads.py / runtimes.py   Caché versionada y servidores nativos gestionados
+  backends/                   MOSS, transcripción HTTP y generación HTTP
   observability.py             SDK/exportadores locales opcionales
   resources.py / profiling.py  Muestreo de procesos y trazas detalladas
   storage.py / reporting.py    Checkpoints JSON, terminal e informe HTML
@@ -376,7 +436,11 @@ flowchart LR
     PLAN --> CORE
     WAV[AudioFile] --> MOSS[backends/moss_transcribe_diarize.py]
     MOSS --> DT[DiarizedTranscript]
-    TXT[Transcript suministrado] --> GEN[backends/http_generation.py]
+    WAV --> WHISPER[backends/whisper_cpp.py]
+    WHISPER --> TXT[Transcript]
+    WHISPER --> WS[runtimes.py: WhisperServer]
+    GEN --> LS[runtimes.py: LlamaServer / Prism]
+    TXT --> GEN[backends/http_generation.py]
     DT --> GEN
     GEN --> NOTE[Note]
     CORE -. ejecuta pasos .-> MOSS

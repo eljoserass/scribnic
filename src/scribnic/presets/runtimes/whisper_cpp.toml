@@ -3,8 +3,9 @@ engine = "whisper_cpp"
 
 [settings]
 release = "v1.9.5"
-binary = "whisper-cli"
+binary = "whisper-server"
 binary_env = "SCRIBNIC_WHISPER_CPP_BINARY"
 threads = 6
 use_gpu = "auto"
 timeout = 600
+startup_timeout = 90

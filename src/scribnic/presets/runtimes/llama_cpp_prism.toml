@@ -1,7 +1,8 @@
-name = "llama_cpp"
+name = "llama_cpp_prism"
 engine = "llama_cpp"
 
 [settings]
+distribution = "prism"
 release = "prism-b10787-73bfe6c"
 context_size = 8192
 threads = 6

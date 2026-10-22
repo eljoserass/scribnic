@@ -59,9 +59,11 @@ def _report_steps(result: RunResult) -> str:
         decode = timings.get("predicted_per_second")
         prompt_text = f"{prompt:.1f} tok/s" if prompt else "—"
         decode_text = f"{decode:.1f} tok/s" if decode else "—"
+        factor = step.metadata.get("real_time_factor")
+        factor_text = f"{factor:.3f}" if factor is not None else "—"
         rows.append(
             f"<tr><td>{html.escape(step.name)}</td><td>{step.elapsed_seconds:.2f} s</td>"
-            f"<td>{prompt_text}</td><td>{decode_text}</td></tr>"
+            f"<td>{factor_text}</td><td>{prompt_text}</td><td>{decode_text}</td></tr>"
         )
     return "".join(rows)
 
@@ -154,11 +156,10 @@ def render_workflow_report(result: RunResult, directory: Path) -> str:
         url = html.escape(_relative_url(result.source.path, directory), quote=True)
         audio = f'<audio controls preload="none" src="{url}"></audio>'
     error = f'<p class="error">{html.escape(result.error)}</p>' if result.error else ""
-    status = "DEMO · salidas inventadas" if result.workflow == "demo" else result.status
     return template.substitute(
         styles=(assets / "report.css").read_text(encoding="utf-8"),
         workflow=html.escape(result.workflow),
-        status=html.escape(status),
+        status=html.escape(result.status),
         started_at=html.escape(result.started_at),
         run_id=result.run_id,
         trace_id=result.trace_id or "Sin exportador configurado",
@@ -184,8 +185,6 @@ def timestamp(seconds: float) -> str:
 
 def print_result(result: RunResult, stream: TextIO) -> None:
     """Present completed artifacts; timestamps/roles are shown only when supplied."""
-    if result.workflow == "demo":
-        print("DEMO · salidas inventadas", file=stream)
     if result.transcript is not None:
         print("\nTRANSCRIPCIÓN\n", file=stream)
         for segment in result.transcript.segments:

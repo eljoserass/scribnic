@@ -60,8 +60,20 @@ def artifact_kind(value: str) -> ArtifactKind:
     return value
 
 
+def _validate_number(step, key, value, *, integer: bool, allow_zero: bool) -> None:
+    label = f"{step.name}.{key}"
+    if integer and type(value) is not int:
+        raise ValueError(f"{label} must be an integer.")
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{label} must be a number.")
+    if not math.isfinite(value) or value < 0 or (value == 0 and not allow_zero):
+        raise ValueError(
+            f"{label} must be {'nonnegative' if allow_zero else 'positive'}."
+        )
+
+
 def validate_settings(step: StepConfig) -> None:
-    """Reject invalid numeric settings before preparing expensive resources."""
+    """Reject invalid settings before preparing expensive resources."""
     positive = (
         "max_tokens",
         "max_input_chars",
@@ -75,32 +87,43 @@ def validate_settings(step: StepConfig) -> None:
         "profile_window_steps",
         "beam_size",
         "best_of",
+        "vad_min_speech_duration_ms",
+        "vad_min_silence_duration_ms",
+        "vad_max_speech_duration_s",
     )
+    nonnegative = ("vad_speech_pad_ms", "vad_samples_overlap")
+    integers = {
+        "threads",
+        "threads_batch",
+        "profile_window_steps",
+        "beam_size",
+        "best_of",
+        "vad_min_speech_duration_ms",
+        "vad_min_silence_duration_ms",
+        "vad_speech_pad_ms",
+    }
     for settings in (step.model.settings, step.runtime.settings):
-        for key in positive:
+        for key in (*positive, *nonnegative):
             if key not in settings:
                 continue
-            value = settings[key]
-            if (
-                key
-                in {
-                    "threads",
-                    "threads_batch",
-                    "profile_window_steps",
-                    "beam_size",
-                    "best_of",
-                }
-                and type(value) is not int
-            ):
-                raise ValueError(f"{step.name}.{key} must be a positive integer.")
-            if isinstance(value, bool) or not isinstance(value, (int, float)):
-                raise ValueError(f"{step.name}.{key} must be a positive number.")
-            if not math.isfinite(value) or value <= 0:
-                raise ValueError(f"{step.name}.{key} must be a positive number.")
-    for key in ("top_p", "min_p"):
+            _validate_number(
+                step,
+                key,
+                settings[key],
+                integer=key in integers,
+                allow_zero=key in nonnegative,
+            )
+    for key in ("top_p", "min_p", "vad_threshold"):
         value = step.model.settings.get(key, 0)
-        if not isinstance(value, (int, float)) or not 0 <= value <= 1:
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not 0 <= value <= 1
+        ):
             raise ValueError(f"{step.name}.{key} must be between 0 and 1.")
+    for key in ("vad", "word_timestamps"):
+        if key in step.model.settings and type(step.model.settings[key]) is not bool:
+            raise ValueError(f"{step.name}.{key} must be true or false.")
 
 
 def _read_toml(path: Path) -> dict:

@@ -1,6 +1,50 @@
 # Workflow core refactor
 
+## Resident native servers and optional VAD — 22 October 2026
+
+- Replace per-file whisper-cli execution with session-owned whisper-server HTTP,
+  preserving the artifact API. Share process lifecycle and health checks with
+  llama-server. Both are native executables, with optional Python dependencies
+  unchanged. Whisper binaries still require explicit installation/building.
+- Rename the shipped generation runtime preset to `llama_cpp_prism`, retaining
+  generic `engine = "llama_cpp"`. Record distribution, requested release and actual
+  executable SHA256. The selected Bonsai PQ2_0 file requires the Prism fork.
+- Expose all seven native VAD controls in model settings; download the pinned
+  885,098-byte Silero v6.2 asset only when enabled. Keep VAD off by default and add
+  `whisper_bonsai_vad` for comparison. Detected speech span limits are distinct
+  from application windowing, overlap reconciliation and batching.
+- Record request duration, load duration, RTF and process RSS/CPU; export speech
+  histograms through OTel and show RTF in the HTML. Whisper v1.9.5 has no native
+  /metrics endpoint; aggregate operator timers appear only in its shutdown log.
+  Its native total includes idle context lifetime, not only active ASR time.
+- Remove shipped demo backend/presets and demo-only rendering. CLI, storage and
+  workflow tests use test-local fakes. Preserve user notes and their factory TODO.
+
+Real runs: `runs/dialogue8-whisper-server-20261022/` completed the full 297.891 s
+recording in 49.34 s: voice 37.05 s (HTTP 36.62 s), note 9.23 s. The VAD variant
+in `runs/dialogue8-whisper-server-vad-20261022/` completed in 48.27 s: voice 38.14 s,
+note 8.15 s; 59 speech spans totaling 285.62 s. VAD had little silence to remove
+and did not improve ASR latency here. Its first seconds overlapped ordinary unit
+tests, so these are exploratory runs, not a controlled speed or quality benchmark.
+Both saved full raw responses, time-aligned transcripts, Spanish notes and OTLP.
+
+Tests additionally verify multipart parameters, warm server reuse, HTTP failure
+cleanup, interrupted native startup, explicit Prism provenance and offline optional
+VAD preparation. Detailed PyTorch phases retain their existing dotted labels;
+the checkpoint's `whisper_encoder` is a Python attribute, not a telemetry label.
+
+Real reuse check: `runs/whisper-server-reuse-20261022/reuse.json` records two
+12-second requests on the same PID, identical transcripts, 0.430 s first load and
+zero second load (requests 2.233 s and 1.805 s). The owned process exited on session
+close. All three speech metric names were found in each full run's OTLP output.
+Validation: 52 tests, 51 pass and one opt-in live skip; the built base wheel runs
+48 tests successfully with four optional skips and no Torch. Lint/format, lock,
+wheel/sdist and staged whitespace checks pass. User notes and the factory TODO
+remain unstaged; original recordings and historical runs remain intact.
+
 ## Whisper.cpp experiment — 22 October 2026
+
+Historical CLI baseline; superseded by the resident server integration above.
 
 First compare plain transcription with the existing note generator:
 `audio → Whisper.cpp → Transcript → Bonsai → Note`. Keep the public API, resolver,
@@ -107,11 +151,11 @@ src/scribnic/
   backends/
     moss_transcribe_diarize.py
     http_generation.py
-    demo.py
+    whisper_cpp.py
   presets/
     models/                 MOSS/Bonsai revisions and model defaults
     runtimes/               Transformers, local llama-server, external HTTP
-    workflows/              Real and deterministic demo workflows
+    workflows/              Local speech/note workflows
     notes/                  Plain-text note instructions
   assets/                   Local report template/styles
 ```

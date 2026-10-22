@@ -8,6 +8,9 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
+from test_workflow import FakeBackend
+
+from scribnic import open_workflow
 from scribnic.cli import main
 
 
@@ -19,13 +22,23 @@ class CLITests(unittest.TestCase):
             source.write_text("Paciente: tengo tos.", encoding="utf-8")
             output = root / "run"
             stdout, stderr = io.StringIO(), io.StringIO()
-            with redirect_stdout(stdout), redirect_stderr(stderr):
+
+            def test_session(config, **kwargs):
+                return open_workflow(
+                    config, backend_factory=lambda step: FakeBackend(step, [])
+                )
+
+            with (
+                redirect_stdout(stdout),
+                redirect_stderr(stderr),
+                patch("scribnic.application.open_workflow", test_session),
+            ):
                 main(
                     [
                         "run",
                         str(source),
                         "--workflow",
-                        "demo",
+                        "bonsai_note",
                         "--output-dir",
                         str(output),
                         "--format",
@@ -45,8 +58,8 @@ class CLITests(unittest.TestCase):
     def test_prepare_never_invokes_inference(self):
         with patch("scribnic.cli.prepare_workflow") as prepare:
             with redirect_stdout(io.StringIO()):
-                main(["prepare", "--workflow", "demo", "--offline"])
-        prepare.assert_called_once_with("demo", offline=True)
+                main(["prepare", "--workflow", "bonsai_note", "--offline"])
+        prepare.assert_called_once_with("bonsai_note", offline=True)
 
     def test_existing_results_are_never_overwritten(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -62,7 +75,7 @@ class CLITests(unittest.TestCase):
                         "run",
                         str(source),
                         "--workflow",
-                        "demo",
+                        "bonsai_note",
                         "--output-dir",
                         str(existing),
                     ]

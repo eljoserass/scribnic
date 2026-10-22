@@ -25,7 +25,9 @@ class StorageTests(unittest.TestCase):
     def test_operator_summary_is_rendered_and_operator_names_are_escaped(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            with open_workflow("demo") as session:
+            with open_workflow(
+                configuration(), backend_factory=lambda step: FakeBackend(step, [])
+            ) as session:
                 result = session.run(Transcript.from_text("Example"))
             profiles = root / "profiles"
             profiles.mkdir()
@@ -113,7 +115,9 @@ class TelemetryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
             with Telemetry(output):
-                with open_workflow("demo") as session:
+                with open_workflow(
+                    configuration(), backend_factory=lambda step: FakeBackend(step, [])
+                ) as session:
                     result = session.run(Transcript.from_text("Example"))
                 logging.getLogger("scribnic").warning("Test diagnostic")
             records = [

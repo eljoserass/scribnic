@@ -1,0 +1,20 @@
+name = "whisper_bonsai_vad"
+inputs = ["audio", "transcript"]
+default_output = "note"
+download_missing = true
+
+[steps.speech]
+model = "whisper_small_q8_0"
+runtime = "whisper_cpp"
+
+[steps.speech.model_settings]
+vad = true
+
+[steps.note]
+model = "bonsai_2_2b"
+runtime = "llama_cpp_prism"
+template = "soap_es"
+source = "speech"
+
+[steps.note.model_settings]
+temperature = 0.0

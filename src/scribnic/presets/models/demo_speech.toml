@@ -1,4 +1,0 @@
-name = "demo_speech"
-backend = "demo"
-inputs = ["audio"]
-output = "diarized_transcript"

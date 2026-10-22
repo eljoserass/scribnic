@@ -21,8 +21,4 @@ def create_backend(step: StepConfig, prepared: PreparedStep):
                 "MOSS-Transcribe-Diarize currently uses the Transformers runtime."
             )
         return MossTranscribeDiarize(step, prepared)
-    if step.model.backend == "demo":
-        from .demo import DemoBackend
-
-        return DemoBackend(step)
     raise ValueError(f"Unknown workflow backend: {step.model.backend}")

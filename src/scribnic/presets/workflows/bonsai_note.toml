@@ -5,5 +5,5 @@ download_missing = true
 
 [steps.note]
 model = "bonsai_2_2b"
-runtime = "llama_cpp"
+runtime = "llama_cpp_prism"
 template = "soap_es"

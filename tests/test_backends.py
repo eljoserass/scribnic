@@ -115,19 +115,16 @@ class PreparationTests(unittest.TestCase):
             self.assertEqual(target.read_bytes(), b"existing")
             self.assertEqual(len(list(root.iterdir())), 2)
 
-    def test_presets_are_valid_and_demo_needs_no_external_runtime(self):
+    def test_presets_are_valid_without_preparing_external_runtimes(self):
         for name in (
             "moss_bonsai",
             "moss_bonsai_http",
             "whisper_bonsai",
+            "whisper_bonsai_vad",
             "bonsai_note",
-            "demo",
         ):
             with open_workflow(name, prepare=False):
                 pass
-        with open_workflow("demo") as session:
-            result = session.run(Transcript.from_text("hello"))
-        self.assertTrue(result.steps[0].metadata["demo"])
 
 
 class MossParserTests(unittest.TestCase):
