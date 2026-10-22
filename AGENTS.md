@@ -27,14 +27,80 @@ not a claim that the current implementation already follows them.
   `elif` branches are fine when they make the alternatives clearer.
 - Keep whitespace between logical blocks. Let the formatter handle wrapping;
   never squeeze code to satisfy a line-count guideline.
-- Add type annotations to public interfaces and shared data. Avoid `Any` when a
-  concrete type or a small Protocol describes the contract.
-- Document public behavior, assumptions, units, and non-obvious constraints.
-  Comments should explain decisions rather than repeat the adjacent statement.
+- Add type annotations to function parameters, return values, and shared data.
+  Avoid `Any` when a concrete type or a small Protocol describes the contract.
+- Document behavior, assumptions, units, and non-obvious constraints using the
+  function documentation rules below. Comments should explain decisions rather
+  than repeat the adjacent statement.
 - Catch specific exceptions at the boundary that can handle them. Preserve the
   original cause and provide actionable context. Avoid blanket exception handling
   and silent fallbacks.
 - Use context managers or `try`/`finally` for resource ownership and cleanup.
+
+## Function signatures and documentation
+
+- Give every named function and method a docstring, including private helpers
+  and constructors. A short, obvious function needs only a one-line summary.
+  Apply this when adding or modifying a function; do not launch an unrelated
+  documentation sweep.
+- Use Google-style docstrings: start with what the function does, then add
+  `Args`, `Returns`, `Yields`, and `Raises` sections where they clarify its
+  contract. Explain parameter meaning, units, accepted values, and important
+  defaults; keep types in annotations rather than repeating them in prose.
+- Document observable side effects and ownership: whether a call downloads,
+  loads or retains a model, starts a process, writes files, or closes a resource.
+  Describe errors callers need to handle, not every incidental library exception.
+- Put the main input first. Make optional behavior switches and tuning settings
+  keyword-only with `*`, especially booleans and numeric values with similar types.
+  Use named arguments at call sites when their meaning would otherwise be unclear.
+- Keep signatures focused on the operation. Group related settings in an existing
+  typed configuration object when that improves clarity. Avoid both long lists of
+  unrelated options and catch-all configuration objects passed through every layer.
+- Use explicit defaults and avoid mutable default arguments. Distinguish `None`
+  from valid false or zero values. Prefer names with units such as `timeout_seconds`.
+- Let Ruff wrap long signatures and calls with one argument per line and a trailing
+  comma. Use modern annotations such as `list[str]` and `str | None`.
+
+For example:
+
+```python
+def real_time_factor(
+    processing_seconds: float,
+    *,
+    audio_seconds: float,
+) -> float:
+    """Calculate processing time per second of source audio.
+
+    Args:
+        processing_seconds: Elapsed processing time, excluding model preparation.
+        audio_seconds: Positive duration of the original recording.
+
+    Returns:
+        The time ratio; values below one mean processing faster than real time.
+
+    Raises:
+        ValueError: If the recording duration is not positive.
+    """
+    if audio_seconds <= 0:
+        raise ValueError("Audio duration must be positive.")
+    return processing_seconds / audio_seconds
+```
+
+## Logical organization
+
+- Give modules a short docstring explaining their responsibility. Group related
+  constants, types, and operations so readers can find the public entry points and
+  follow their helpers without jumping between unrelated concerns.
+- Separate cohesive phases with blank lines. A short comment such as
+  `# Prepare the input` can name a phase when it helps readers follow a longer
+  sequence. Avoid decorative banners and comments that narrate every statement.
+- Group configuration fields by purpose and document units or constraints near
+  the fields. Keep CLI parsing, model preparation, inference, and persistence in
+  their respective layers even when a script presents them as consecutive phases.
+- A phase that owns separate state, error handling, or reusable behavior is a
+  candidate for a helper. A section comment does not make a large function cohesive.
+- Pass dependencies explicitly or keep them on the owning session. Avoid mutable
+  module globals for models, clients, inference contexts, and per-run state.
 
 ## Functions, classes, and module boundaries
 
