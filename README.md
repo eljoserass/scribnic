@@ -117,6 +117,11 @@ ffmpeg -i entrada.mp3 -ac 1 -ar 16000 -c:a pcm_s16le consulta.wav
 | `moss_bonsai_sglang` | MOSS en SGLang Omni existente | Bonsai / Prism; instalación base del cliente |
 | `bonsai_note` | Entrada de texto | Bonsai / Prism; instalación base |
 
+Whisper streaming todavía no está integrado: ambos presets Whisper envían el WAV
+completo. Activar VAD no habilita entrada incremental. NVIDIA streaming reproduce
+un WAV por WebSocket; todavía no hay captura pública de micrófono. El objetivo
+futuro es transcribir durante la consulta y generar una sola nota al finalizar.
+
 ```bash
 # Streaming NVIDIA: solo se añade el pequeño cliente WebSocket.
 uv run --extra streaming scribnic run consulta.wav --workflow nvidia_cpp_streaming
@@ -152,7 +157,7 @@ local sigue disponible. [MOSS: configuración y límites](docs/moss.md).
 from scribnic import AudioFile, Transcript, open_workflow
 
 with open_workflow("nvidia_cpp_offline") as scribe:
-    startup = scribe.start()  # Opcional: carga y warmup antes de medir consultas.
+    startup = scribe.start()  # Opcional: precarga antes de medir consultas.
     result = scribe.run(AudioFile("consulta.wav"), output_dir="runs/consulta")
     print(result.note.text)
 
@@ -167,6 +172,14 @@ los tiempos y recursos del arranque para guardarlos por separado en evaluación.
 `run` también arranca servicios bajo demanda si no se llamó a `start`. La CLI cierra
 la sesión tras una ejecución; la app o el evaluador mantienen una sesión para varios
 audios. `close` cierra solo procesos propios, nunca servicios externos.
+
+`start()` es precarga explícita; Scribnic no envía una consulta de prueba para
+garantizar warmup de todas las operaciones. Después, `run()` reutiliza esos modelos
+y sigue validando entradas, convirtiendo salidas y guardando resultados si se pide.
+La opción propuesta `keep_loaded` aún no existe: conservar un modelo después de
+usarlo y cargarlo por adelantado son decisiones distintas. Queda pendiente la
+retención por servicio, incluida la granularidad ASR/diarización de NVIDIA:
+[notas de diseño](docs/nvidia.md#pendiente-residencia-por-servicio).
 
 Los modelos permanecen cargados; cada grabación recibe estado de reconocimiento y
 artefactos nuevos. `without_speakers()` conserva texto y tiempos, elimina identidades

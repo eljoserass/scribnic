@@ -52,6 +52,9 @@ class RuntimeConfig:
 class StepConfig:
     """Bind a protocol adapter to weights, a service and an artifact contract."""
 
+    # TODO(lifecycle): configure retention independently of explicit preload.
+    # Apply policy in WorkflowSession and respect service ownership/capabilities;
+    # ASR and companion diarization can share one resident process. See docs/nvidia.md.
     name: str
     model: ModelConfig
     runtime: RuntimeConfig

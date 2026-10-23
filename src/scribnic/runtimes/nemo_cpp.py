@@ -6,7 +6,12 @@ from .server import ManagedServer
 
 
 class NemoServer(ManagedServer):
-    """Keep the ASR and optional diarizer loaded for this workflow session."""
+    """Own one ASR/diarizer service bundle until the workflow session closes.
+
+    ASR and its optional diarizer share this process. Independent residency would
+    require a granular server API or separate service managers; it is not exposed
+    by the current implementation.
+    """
 
     def __init__(self, runtime: RuntimeConfig, prepared: PreparedStep) -> None:
         """Retain pinned assets and use the service's model readiness endpoint."""

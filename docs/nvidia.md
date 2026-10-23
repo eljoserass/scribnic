@@ -36,6 +36,30 @@ en las mediciones de latencia.
   parciales. No introduce esperas de reproducción. No es OpenAI Realtime ni una
   API pública de captura de micrófono: por ahora la entrada sigue siendo un WAV.
 
+Ambos modos usan el backend `OpenAITranscription`. `backends/nemo_streaming.py`
+es el cliente auxiliar de su protocolo WebSocket, sin carga de modelos ni
+planificación de etapas. La compatibilidad HTTP no implica compatibilidad Realtime.
+
+La [documentación oficial de OpenAI](https://developers.openai.com/api/docs/guides/transcription)
+distingue dos significados de streaming:
+
+| Contrato | Entrada y salida | Compatibilidad actual de Scribnic con NVIDIA |
+| --- | --- | --- |
+| Transcriptions HTTP, `stream=true` | Se sube una grabación; el texto llega por eventos SSE | No está conectado; el modo offline pide una respuesta final |
+| OpenAI Realtime transcription | Audio incremental mediante una sesión persistente | No está implementado como cliente/proxy de NVIDIA |
+| NeMo-Speech.cpp WebSocket | PCM incremental y eventos del protocolo propio de NVIDIA | Implementado por `nemo_streaming.py` dentro del backend compartido |
+
+OpenAI Realtime y NeMo comparten algunos nombres de eventos, pero difieren en URL,
+configuración de sesión y metadatos. NeMo admite PCM binario o JSON con base64;
+Scribnic usa PCM binario. No basta con cambiar `base_url` en el SDK de OpenAI.
+Un adaptador de protocolos o compatibilidad implementada en el servidor podría
+unificarlos más adelante. Mantener el pequeño cliente específico evita introducir
+ahora un proxy y preserva timestamps y atribución de hablantes de NeMo.
+
+Fuentes: [OpenAI: archivos y salida streaming](https://developers.openai.com/api/docs/guides/speech-to-text),
+[OpenAI: entrada Realtime](https://developers.openai.com/api/docs/guides/realtime-transcription),
+[NeMo v0.2.0: protocolo propio](https://github.com/NVIDIA/NeMo-Speech.cpp/blob/v0.2.0/docs/api.md).
+
 La salida pública es `DiarizedTranscript`. El texto puede proyectarse mediante
 `without_speakers()` para ablations; la nota acepta ambos tipos. El cliente nunca
 inventa roles clínicos a partir del número de hablante.
@@ -59,6 +83,35 @@ uv run scribnic run consulta.wav --workflow nvidia_cpp_asr_offline --output tran
 Desactivar diarización evita ejecutar ese modelo. Para aislar solo el efecto de las
 etiquetas sobre una nota, utilizar en cambio la misma transcripción diarizada y su
 proyección `without_speakers()` con el mismo generador.
+
+## Pendiente: residencia por servicio
+
+Estas son notas de diseño; no hay una clave `keep_loaded` implementada ni descarga
+selectiva de modelos después de una etapa. Actualmente `session.start()` precarga
+los pasos seleccionados; sin esa llamada, `run()` los carga bajo demanda. Una sesión
+los conserva hasta `close()`. Los archivos preparados por `setup` permanecen en la
+caché en disco y no equivalen a modelos cargados en RAM.
+
+La futura política debe separar cuándo cargar de cuánto tiempo conservar. Podría
+mantenerse voz residente y liberar el generador al terminar la nota, o al revés.
+Liberar al terminar una etapa de streaming significaría cerrar la consulta completa,
+no descargar y recargar el modelo entre cada chunk. `WorkflowSession` aplicaría la
+política común; el backend/runtime liberaría sus recursos usando las capacidades
+del servicio. Un comando de liberación soportado y detener un proceso propio son
+mecanismos distintos para esa misma política. Gestionar modelos de endpoints
+externos requiere un contrato explícito sobre la propiedad y gestión del servicio.
+
+Conservar solo diarización tiene sentido, pero el gestor actual de NeMo carga ASR
+y diarizador en el mismo proceso. No ofrece una operación para liberar únicamente
+uno de ellos. Haría falta soporte granular del servidor o separar servicios y
+componer sus resultados. La unidad de residencia debe representar esa agrupación
+real, en lugar de suponer que cada archivo de pesos tiene un ciclo de vida propio.
+
+La CLI crea y cierra una sesión por comando. Precargar solo desplaza la carga a otra
+fase; conservar modelos no evita recargas entre comandos independientes. Liberar
+voz antes de cargar notas sí podría reducir el pico de RAM dentro de un comando.
+La reutilización entre consultas aporta su beneficio en una app o evaluador que
+mantenga abierta la misma sesión Python.
 
 ## Estrategia de diarización
 

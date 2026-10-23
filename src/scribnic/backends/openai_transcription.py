@@ -89,6 +89,8 @@ class OpenAITranscription:
         settings = self.step.model.settings
         language = str(settings.get("language", "es"))
         if settings.get("mode", "offline") == "streaming":
+            # NeMo's live PCM protocol differs from OpenAI Realtime and from
+            # stream=True on file transcription, which streams response events.
             from .nemo_streaming import transcribe_stream
 
             return transcribe_stream(

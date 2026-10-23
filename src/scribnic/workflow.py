@@ -159,6 +159,10 @@ class WorkflowSession:
     ) -> dict[str, object]:
         """Load selected steps before evaluation or recording, without producing artifacts.
 
+        Preloading is separate from retaining resources after a request. Currently
+        resources stay loaded until close(); per-service retention is pending.
+        This call does not send a synthetic inference request for warmup.
+
         Args:
             source_kind: Kind of input future calls supply; text bypasses speech.
             output: Requested output, defaulting to the workflow's note.

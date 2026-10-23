@@ -1,4 +1,9 @@
-"""Replay WAV PCM through NeMo-Speech.cpp's specific streaming WebSocket API."""
+"""Replay WAV PCM through NeMo-Speech.cpp's specific streaming WebSocket API.
+
+OpenAITranscription delegates its streaming transport here. This helper owns the
+wire protocol, not model loading or workflow routing. Similar event names do not
+make the NeMo session schema interchangeable with OpenAI Realtime transcription.
+"""
 
 import json
 import threading
