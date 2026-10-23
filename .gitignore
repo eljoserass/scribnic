@@ -15,3 +15,5 @@ wheels/
 /transcript.json
 /result.json
 /runs/
+
+*.wav

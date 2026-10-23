@@ -3,3 +3,11 @@
 - [ ] streaming de audio IN, streaming results OUT
 - [ ] considerar detectar "quien" es el speaker con una configuracion incial de embedding de audio del doctor
 - [ ] considerar detectar idioma
+- [ ] inputs de los presets no identifica cuales son mandatory y cuales opcionales
+- [ ] validar diarizacion se agrupen los timestamps adecuadamente
+- [ ] profiling de llamaserver con --metrics y ---perf
+- [ ] look for low hanging fruit optimization. eg, speaker activy recognition para no procesar audio vacio
+- [ ] implement source chain referencing, eg nota dijo A -> presente en esta parte del script, que está timestamped, presente en esta parte del audio
+- [ ] implement saliency detection by visualizing the attention of the note generator 
+- end to end audio to note with something like https://huggingface.co/OpenMOSS-Team/MOSS-Audio-4B-Thinking. if working in streaming fashion, perharps intruct to function call to "save" relevant information for the note or do nothing. to be seen if skipping diarization with degrade perfomance
+- [ ] hacer scribnic serve para dejar modelo en memoria, a lo mejor no hace falta para evals pero si para 
