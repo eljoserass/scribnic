@@ -94,7 +94,10 @@ class OpenAIChat:
         request = self._request(conversation)
         load_seconds = self.start()
         try:
-            with tracer().start_as_current_span("scribnic.note.request"):
+            with tracer().start_as_current_span(
+                "scribnic.note.request",
+                attributes={"scribnic.model.name": self.step.model.name},
+            ):
                 response = self.client.chat.completions.create(**request)
         except OpenAIError as error:
             raise ValueError(f"Note generation failed: {error}") from error

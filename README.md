@@ -212,6 +212,9 @@ porcentaje fiable y se presenta con un spinner. No interpretamos el presupuesto
 de tokens como un total de trabajo. La exportación de trazas Torch tiene su fase.
 Las fases de transcripción y generación empiezan después de cargar su servicio;
 el resumen conserva el tiempo total de cada etapa, incluida su carga inicial.
+Esto cubre Whisper, NVIDIA offline y WebSocket, MOSS por HTTP y Transformers,
+y las notas por Chat Completions. La precarga desde Python también identifica
+el modelo; reutilizarlo no muestra otra carga ficticia.
 
 El progreso y los avisos van a `stderr`; `--format json` mantiene un único documento
 JSON en `stdout`. Al redirigir la salida de progreso se imprimen líneas estables,

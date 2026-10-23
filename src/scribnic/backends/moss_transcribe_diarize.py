@@ -63,7 +63,13 @@ class MossTranscribeDiarize:
 
     def start(self) -> float:
         """Load the optional model before measured runs, returning initial load time."""
-        return self._load()
+        if self.model is not None:
+            return 0.0
+        with tracer().start_as_current_span(
+            "scribnic.moss.load",
+            attributes={"scribnic.model.name": self.step.model.name},
+        ):
+            return self._load()
 
     def _load(self) -> float:
         if self.model is not None:
@@ -144,13 +150,18 @@ class MossTranscribeDiarize:
         """Load MOSS lazily, then recognize audio with separately timed inference."""
         if not isinstance(source, AudioFile) or source.duration is None:
             raise ValueError("MOSS needs a validated WAV audio artifact.")
-        with tracer().start_as_current_span("scribnic.moss.load"):
-            load_seconds = self._load()
+        load_seconds = self.start()
         if self.device.type == "cuda":
             self.torch.cuda.reset_peak_memory_stats(self.device)
         include_gpu = self.step.runtime.settings.get("profile_gpu", False)
         with (
-            tracer().start_as_current_span("scribnic.moss.inference"),
+            tracer().start_as_current_span(
+                "scribnic.moss.inference",
+                attributes={
+                    "scribnic.model.name": self.step.model.name,
+                    "scribnic.output.kind": self.step.model.output,
+                },
+            ),
             self._cpu_threads() as threads,
         ):
             self._describe_runtime(source, threads)

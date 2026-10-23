@@ -18,6 +18,7 @@ class OpenAIConnection:
 
     def __init__(self, step: StepConfig, prepared: PreparedStep) -> None:
         """Configure the service without importing model libraries or loading weights."""
+        self.model_name = step.model.name
         self.settings = step.runtime.settings
         self.runtime = create_runtime(step, prepared)
         self.client: OpenAI | None = None
@@ -30,7 +31,10 @@ class OpenAIConnection:
 
         started = perf_counter()
         key_name = str(self.settings.get("api_key_env", "SCRIBNIC_API_KEY"))
-        with tracer().start_as_current_span("scribnic.service.load"):
+        with tracer().start_as_current_span(
+            "scribnic.service.load",
+            attributes={"scribnic.model.name": self.model_name},
+        ):
             base_url = self.runtime.start()
             try:
                 self.client = OpenAI(

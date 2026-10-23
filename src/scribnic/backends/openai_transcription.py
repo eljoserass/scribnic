@@ -122,7 +122,13 @@ class OpenAITranscription:
         load_seconds = self.start()
         started = perf_counter()
         try:
-            with tracer().start_as_current_span("scribnic.speech.request"):
+            with tracer().start_as_current_span(
+                "scribnic.speech.request",
+                attributes={
+                    "scribnic.model.name": self.step.model.name,
+                    "scribnic.output.kind": self.step.model.output,
+                },
+            ):
                 payload = self._request(source)
         except (OpenAIError, OSError, TimeoutError, ValueError) as error:
             self.close()
