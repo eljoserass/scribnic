@@ -1,5 +1,5 @@
-name = "http"
-engine = "http"
+name = "external_endpoint"
+engine = "external_endpoint"
 
 [settings]
 base_url = "http://localhost:1235/v1"

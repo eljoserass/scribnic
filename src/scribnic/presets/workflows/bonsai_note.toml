@@ -4,6 +4,7 @@ default_output = "note"
 download_missing = true
 
 [steps.note]
-model = "bonsai_2_2b"
+backend = "openai_chat"
+model = "Ternary-Bonsai-2-2B-PQ2_0"
 runtime = "llama_cpp_prism"
 template = "soap_es"

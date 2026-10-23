@@ -39,9 +39,9 @@ class NativeServerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             server = WhisperServer(runtime, prepared(Path(directory)))
             with patch(
-                "scribnic.runtimes.subprocess.Popen", side_effect=FakeProcess
+                "scribnic.runtimes.server.subprocess.Popen", side_effect=FakeProcess
             ) as launch:
-                with patch("scribnic.runtimes._health", return_value=True):
+                with patch("scribnic.runtimes.server._health", return_value=True):
                     first = server.start()
                     self.assertEqual(server.start(), first)
                 process = server.process
@@ -59,8 +59,12 @@ class NativeServerTests(unittest.TestCase):
         runtime = load_workflow("whisper_bonsai").steps[0].runtime
         with tempfile.TemporaryDirectory() as directory:
             server = WhisperServer(runtime, prepared(Path(directory)))
-            with patch("scribnic.runtimes.subprocess.Popen", side_effect=FakeProcess):
-                with patch("scribnic.runtimes._health", side_effect=KeyboardInterrupt):
+            with patch(
+                "scribnic.runtimes.server.subprocess.Popen", side_effect=FakeProcess
+            ):
+                with patch(
+                    "scribnic.runtimes.server._health", side_effect=KeyboardInterrupt
+                ):
                     with self.assertRaises(KeyboardInterrupt):
                         server.start()
             self.assertTrue(server.process.terminated)

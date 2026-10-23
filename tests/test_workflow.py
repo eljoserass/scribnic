@@ -29,11 +29,14 @@ from scribnic.config import (
 
 def configuration() -> WorkflowConfig:
     runtime = RuntimeConfig("fake", "fake")
-    speech = ModelConfig("speech", "fake", ("audio",), "diarized_transcript")
-    note = ModelConfig("note", "fake", ("transcript", "diarized_transcript"), "note")
+    speech = ModelConfig("speech", ("audio",), "diarized_transcript")
+    note = ModelConfig("note", ("transcript", "diarized_transcript"), "note")
     return WorkflowConfig(
         "example",
-        (StepConfig("speech", speech, runtime), StepConfig("note", note, runtime)),
+        (
+            StepConfig("speech", speech, runtime, "fake"),
+            StepConfig("note", note, runtime, "fake"),
+        ),
     )
 
 
@@ -51,6 +54,10 @@ class FakeBackend:
         self.calls = calls
         self.fail = fail
         self.closed = False
+
+    def start(self) -> float:
+        """Represent an already available fake model without producing artifacts."""
+        return 0.0
 
     def run(self, source):
         self.calls.append((self.step.name, source))
@@ -71,6 +78,8 @@ class FakeBackend:
 
 
 class WorkflowTests(unittest.TestCase):
+    """Verify reusable sessions independently of speech engines and interfaces."""
+
     def setUp(self):
         self.calls = []
         self.constructed = []
@@ -91,6 +100,21 @@ class WorkflowTests(unittest.TestCase):
         self.assertIsInstance(result.transcript, DiarizedTranscript)
         self.assertEqual([name for name, _ in self.calls], ["speech", "note"])
         self.assertTrue(all(backend.closed for backend in self.constructed))
+
+    def test_explicit_start_loads_selected_steps_without_producing_artifacts(
+        self,
+    ) -> None:
+        """Evaluation can separate startup from requests and bypass speech for text."""
+        with open_workflow(configuration(), backend_factory=self.factory) as session:
+            startup = session.start(source_kind="transcript")
+            self.assertEqual(set(startup["step_load_seconds"]), {"note"})
+            self.assertFalse(self.calls)
+            result = session.run(Transcript.from_text("consulta independiente"))
+        self.assertEqual(len(self.constructed), 1)
+        self.assertEqual(result.note.text, "consulta independiente")
+        self.assertIsNone(
+            result.transcript if result.get("diarized_transcript") else None
+        )
 
     def test_stop_at_speech_then_supply_modified_transcript(self):
         with tempfile.TemporaryDirectory() as directory:

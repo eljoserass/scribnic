@@ -81,10 +81,37 @@ def note_server(*, models=None, content=NOTE, finish_reason="stop"):
 
 
 @contextmanager
-def transcription_server(data, *, status=200):
+def transcription_server(
+    data: dict, *, status: int = 200, models: tuple[str, ...] = ()
+):
+    """Serve multipart transcription responses and an optional model inventory."""
     requests = []
 
     class Handler(BaseHTTPRequestHandler):
+        """Implement only the model-list and transcription routes needed by tests."""
+
+        def do_GET(self) -> None:
+            """List explicit model IDs for external-service startup checks."""
+            payload = json.dumps(
+                {
+                    "object": "list",
+                    "data": [
+                        {
+                            "id": model,
+                            "object": "model",
+                            "created": 0,
+                            "owned_by": "test",
+                        }
+                        for model in models
+                    ],
+                }
+            ).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
         def log_message(self, *args):
             pass
 

@@ -4,11 +4,13 @@ default_output = "note"
 download_missing = true
 
 [steps.speech]
+backend = "moss_transcribe_diarize"
 model = "moss_transcribe_diarize"
 runtime = "transformers"
 
 [steps.note]
-model = "bonsai_2_2b"
-runtime = "http"
+backend = "openai_chat"
+model = "Ternary-Bonsai-2-2B-PQ2_0"
+runtime = "external_endpoint"
 template = "soap_es"
 source = "speech"

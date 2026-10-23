@@ -56,7 +56,7 @@ class CLITests(unittest.TestCase):
             self.assertIn("note", stderr.getvalue())
 
     def test_prepare_never_invokes_inference(self):
-        with patch("scribnic.cli.prepare_workflow") as prepare:
+        with patch("scribnic.cli.setup_workflow") as prepare:
             with redirect_stdout(io.StringIO()):
                 main(["prepare", "--workflow", "bonsai_note", "--offline"])
         prepare.assert_called_once_with("bonsai_note", offline=True)

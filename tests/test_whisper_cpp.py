@@ -14,8 +14,9 @@ from unittest.mock import patch
 from helpers import note_server, transcription_server
 
 from scribnic import AudioFile, Transcript, open_workflow
-from scribnic.backends.http_generation import HTTPGeneration
-from scribnic.backends.whisper_cpp import WhisperCPP, parse_transcript
+from scribnic.backends.openai_chat import OpenAIChat
+from scribnic.backends.openai_transcription import OpenAITranscription
+from scribnic.backends.transcription_formats import parse_segments
 from scribnic.config import load_workflow, validate_settings
 from scribnic.downloads import (
     PreparedStep,
@@ -24,6 +25,7 @@ from scribnic.downloads import (
     prepare_vad,
     sha256_file,
 )
+from scribnic.runtimes.endpoint import ExternalEndpoint
 
 NATIVE = {
     "language": "Spanish",
@@ -38,6 +40,8 @@ NATIVE = {
 
 
 class FakeServer:
+    """Stand in for a session-owned speech server without launching a model."""
+
     def __init__(self, url):
         self.url = url
         self.process = None
@@ -55,6 +59,10 @@ class FakeServer:
     def close(self):
         self.process = None
         self.closed = True
+
+    def process_ids(self) -> tuple[int, ...]:
+        """Expose the test process while the fake server is active."""
+        return (self.process.pid,) if self.process else ()
 
 
 def prepared_files(root: Path) -> PreparedStep:
@@ -75,7 +83,7 @@ def write_audio(root: Path) -> AudioFile:
 
 class WhisperParserTests(unittest.TestCase):
     def test_native_times_are_preserved_without_inventing_speaker_labels(self):
-        transcript = parse_transcript(NATIVE, 2)
+        transcript = parse_segments(NATIVE, duration_seconds=2)
         self.assertIsInstance(transcript, Transcript)
         self.assertEqual(transcript.segments[0].start, 0.1)
         self.assertEqual(transcript.segments[-1].end, 1.5)
@@ -91,10 +99,12 @@ class WhisperParserTests(unittest.TestCase):
         )
         for data in cases:
             with self.subTest(data=data), self.assertRaises(ValueError):
-                parse_transcript(data, 2)
+                parse_segments(data, duration_seconds=2)
 
     def test_small_native_endpoint_overshoot_is_preserved(self):
-        self.assertEqual(parse_transcript(NATIVE, 1.391).segments[-1].end, 1.5)
+        self.assertEqual(
+            parse_segments(NATIVE, duration_seconds=1.391).segments[-1].end, 1.5
+        )
 
 
 class WhisperPreparationTests(unittest.TestCase):
@@ -176,9 +186,12 @@ class WhisperHTTPTests(unittest.TestCase):
             root = Path(directory)
             server = FakeServer(url)
             with patch(
-                "scribnic.backends.whisper_cpp.WhisperServer", return_value=server
+                "scribnic.backends.connection.create_runtime",
+                side_effect=lambda step, prepared: (
+                    server if step.name == "speech" else ExternalEndpoint(step.runtime)
+                ),
             ):
-                backend = WhisperCPP(step, prepared_files(root))
+                backend = OpenAITranscription(step, prepared_files(root))
                 with self.assertRaisesRegex(ValueError, "transcription failed"):
                     backend.run(write_audio(root))
             self.assertTrue(server.closed)
@@ -198,14 +211,19 @@ class WhisperHTTPTests(unittest.TestCase):
 
             def factory(step):
                 if step.name == "speech":
-                    return WhisperCPP(step, prepared)
+                    return OpenAITranscription(step, prepared)
                 runtime = replace(
-                    step.runtime, engine="http", settings={"base_url": note_url}
+                    step.runtime,
+                    engine="external_endpoint",
+                    settings={"base_url": note_url},
                 )
-                return HTTPGeneration(replace(step, runtime=runtime), prepared)
+                return OpenAIChat(replace(step, runtime=runtime), prepared)
 
             with patch(
-                "scribnic.backends.whisper_cpp.WhisperServer", return_value=server
+                "scribnic.backends.connection.create_runtime",
+                side_effect=lambda step, prepared: (
+                    server if step.name == "speech" else ExternalEndpoint(step.runtime)
+                ),
             ):
                 with open_workflow(config, backend_factory=factory) as session:
                     result = session.run(write_audio(root), output_dir=root / "full")

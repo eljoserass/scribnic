@@ -6,7 +6,7 @@ import sys
 from contextlib import redirect_stdout
 from pathlib import Path
 
-from .application import execute, new_run_directory, prepare_workflow
+from .application import execute, new_run_directory, setup_workflow
 from .artifacts import ARTIFACT_KINDS
 from .reporting import print_result
 from .storage import result_to_dict
@@ -14,6 +14,7 @@ from .workflow import WorkflowRunError
 
 
 def _parser() -> argparse.ArgumentParser:
+    """Declare file execution and resource setup without embedding workflow logic."""
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     run = commands.add_parser("run", help="Generate a note or an intermediate artifact")
@@ -32,17 +33,20 @@ def _parser() -> argparse.ArgumentParser:
         "--offline", action="store_true", help="Require already cached resources"
     )
     run.add_argument(
-        "--profile", action="store_true", help="Also save a detailed Torch trace"
+        "--profile",
+        action="store_true",
+        help="Save optional runtime profiles and coverage",
     )
-    prepare = commands.add_parser(
-        "prepare", help="Download/check assets without inference"
+    setup = commands.add_parser(
+        "setup", aliases=["prepare"], help="Download/check selected workflow assets"
     )
-    prepare.add_argument("--workflow", required=True)
-    prepare.add_argument("--offline", action="store_true")
+    setup.add_argument("--workflow", required=True)
+    setup.add_argument("--offline", action="store_true")
     return parser
 
 
 def _run(args: argparse.Namespace) -> None:
+    """Invoke the saved-run API and present its note, JSON or error context."""
     directory = (args.output_dir or new_run_directory()).expanduser().resolve()
     print(f"\nSCRIBNIC · {args.workflow}\nResultados: {directory}", file=sys.stderr)
     with redirect_stdout(sys.stderr):
@@ -63,10 +67,11 @@ def _run(args: argparse.Namespace) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Parse the CLI, invoke the public application layer and report failures."""
     args = _parser().parse_args(argv)
     try:
-        if args.command == "prepare":
-            prepare_workflow(args.workflow, offline=args.offline)
+        if args.command in {"setup", "prepare"}:
+            setup_workflow(args.workflow, offline=args.offline)
             print(
                 "Recursos preparados. Los modelos se cargarán al ejecutar el workflow."
             )

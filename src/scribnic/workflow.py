@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
-from typing import Callable, Protocol
+from typing import TYPE_CHECKING, Callable, Protocol
 from uuid import uuid4
 
 from .artifacts import (
@@ -24,8 +24,17 @@ from .planning import PlannedStep, resolve_plan, validate_workflow
 from .profiling import profile_directory
 from .resources import ResourceMonitor
 
+if TYPE_CHECKING:
+    from .storage import RunStore
+
 
 class Backend(Protocol):
+    """Own reusable inference resources and return isolated artifact outputs."""
+
+    def start(self) -> float:
+        """Prepare inference resources once and return initial load seconds."""
+        ...
+
     def run(self, source: Artifact) -> StepOutput: ...
 
     def process_ids(self) -> tuple[int, ...]: ...
@@ -78,6 +87,8 @@ class _Execution:
 
 
 class WorkflowSession:
+    """Own reusable backends and services while isolating every run's artifacts."""
+
     def __init__(
         self,
         config: WorkflowConfig,
@@ -86,7 +97,8 @@ class WorkflowSession:
         prepare: bool = True,
         download: bool | None = None,
         cache: Path | None = None,
-    ):
+    ) -> None:
+        """Validate a workflow and optionally prepare its assets without inference."""
         from .downloads import ResourceManager
 
         validate_workflow(config)
@@ -138,6 +150,40 @@ class WorkflowSession:
             identifiers.extend(backend.process_ids())
         return tuple(identifiers)
 
+    def start(
+        self,
+        *,
+        source_kind: ArtifactKind = "audio",
+        output: ArtifactKind | None = None,
+    ) -> dict[str, object]:
+        """Load selected steps before evaluation or recording, without producing artifacts.
+
+        Args:
+            source_kind: Kind of input future calls supply; text bypasses speech.
+            output: Requested output, defaulting to the workflow's note.
+
+        Returns:
+            Startup duration, per-step load times and sampled process resources.
+            The caller may persist this separately from measured inference runs.
+        """
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("This workflow session has been closed.")
+            target = artifact_kind(output or self.config.default_output)
+            plan = resolve_plan(self.config, source_kind, target)
+            started = perf_counter()
+            monitor = ResourceMonitor("startup-" + uuid4().hex, self._runtime_pids)
+            steps = {}
+            with tracer().start_as_current_span("scribnic.workflow.start"), monitor:
+                self._prepare_backends(plan)
+                for planned in plan:
+                    steps[planned.step.name] = self._backend(planned.step).start()
+            return {
+                "elapsed_seconds": perf_counter() - started,
+                "step_load_seconds": steps,
+                "resources": monitor.summary(),
+            }
+
     def run(
         self,
         source: Artifact,
@@ -171,7 +217,13 @@ class WorkflowSession:
             ):
                 return self._execute(state, plan, store, profile)
 
-    def _execute(self, state: _Execution, plan, store, profile: bool) -> RunResult:
+    def _execute(
+        self,
+        state: _Execution,
+        plan: tuple[PlannedStep, ...],
+        store: "RunStore | None",
+        profile: bool,
+    ) -> RunResult:
         """Execute a plan with durable diagnostics and scoped resource monitoring."""
         from .storage import artifact_directory
 
@@ -211,7 +263,7 @@ class WorkflowSession:
         state.artifacts[state.source.kind] = state.source
 
     def _prepare_backends(self, plan: tuple[PlannedStep, ...]) -> None:
-        # Preflight reachable services before loading speech model weights.
+        """Construct only the selected adapters without loading model weights."""
         for planned in plan:
             with tracer().start_as_current_span(
                 "scribnic.backend.prepare",
@@ -219,7 +271,13 @@ class WorkflowSession:
             ):
                 self._backend(planned.step)
 
-    def _run_steps(self, state: _Execution, plan, store) -> None:
+    def _run_steps(
+        self,
+        state: _Execution,
+        plan: tuple[PlannedStep, ...],
+        store: "RunStore | None",
+    ) -> None:
+        """Execute declared adapters and persist each completed artifact before continuing."""
         for planned in plan:
             attributes = {
                 "scribnic.step.name": planned.step.name,
@@ -241,7 +299,7 @@ class WorkflowSession:
             state.records.append(
                 StepRecord(
                     planned.step.name,
-                    planned.step.model.backend,
+                    planned.step.backend,
                     perf_counter() - started,
                     produced.metadata,
                 )

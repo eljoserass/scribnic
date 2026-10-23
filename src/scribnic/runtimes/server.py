@@ -1,7 +1,6 @@
-"""Owned native HTTP servers: shared lifecycle, runtime-specific commands."""
+"""Lifecycle and diagnostics for local inference server processes owned by Scribnic."""
 
 import json
-import platform
 import socket
 import subprocess
 import time
@@ -9,26 +8,35 @@ import urllib.error
 import urllib.request
 from uuid import uuid4
 
-from .config import RuntimeConfig
-from .downloads import PreparedStep, sha256_file
+from ..config import RuntimeConfig
+from ..downloads import PreparedStep, sha256_file
+from ..storage import diagnostic_path
 
 
 def _available_port() -> int:
+    """Select a loopback TCP port for a session-owned service."""
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         return listener.getsockname()[1]
 
 
 def _health(base_url: str) -> bool:
+    """Check the readiness endpoint without importing an inference SDK."""
     try:
-        with urllib.request.urlopen(base_url + "/health", timeout=0.5) as response:
-            return json.load(response).get("status") == "ok"
+        with urllib.request.urlopen(base_url, timeout=0.5) as response:
+            payload = json.load(response)
+            return payload.get("ready") is True or payload.get("status") == "ok"
     except (OSError, ValueError):
         return False
 
 
-class _NativeServer:
-    def __init__(self, runtime: RuntimeConfig, prepared: PreparedStep, alias: str = ""):
+class ManagedServer:
+    """Own one resident server process and its log until the session closes."""
+
+    def __init__(
+        self, runtime: RuntimeConfig, prepared: PreparedStep, alias: str = ""
+    ) -> None:
+        """Retain prepared local files without starting a process or loading weights."""
         if prepared.binary is None or prepared.model_path is None:
             raise ValueError(f"{runtime.name} needs prepared binary and model files.")
         self.runtime = runtime
@@ -41,17 +49,32 @@ class _NativeServer:
         self.command: list[str] = []
         self.binary_sha256 = sha256_file(prepared.binary)
         self.startup_seconds = 0.0
+        self.health_path = "/health"
 
     def _command(self, port: int) -> list[str]:
+        """Build the selected engine's argument list."""
         raise NotImplementedError
 
+    def process_ids(self) -> tuple[int, ...]:
+        """Return the live owned PID for application resource sampling."""
+        process = self.process
+        return (process.pid,) if process and process.poll() is None else ()
+
+    def metrics(self) -> str | None:
+        """Return optional native metrics; engines must opt into this capability."""
+        return None
+
     def start(self) -> str:
+        """Start the owned service once and wait for its model to become ready."""
         if self.process is not None and self.process.poll() is None:
             return self.base_url
         started = time.monotonic()
         port = int(self.runtime.settings.get("port", 0)) or _available_port()
         self.base_url = f"http://127.0.0.1:{port}/v1"
         self.command = self._command(port)
+        self.log_path = diagnostic_path(
+            f"{self.runtime.name}-{uuid4().hex}.log", cache=self.prepared.cache
+        )
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         self._log = self.log_path.open("w", encoding="utf-8")
         try:
@@ -69,6 +92,7 @@ class _NativeServer:
         return self.base_url
 
     def _wait_ready(self) -> None:
+        """Wait for readiness, reporting early process exit or startup timeout."""
         deadline = time.monotonic() + float(
             self.runtime.settings.get("startup_timeout", 90)
         )
@@ -79,7 +103,7 @@ class _NativeServer:
                 raise RuntimeError(
                     f"{self.runtime.name} exited during startup:\n{tail}"
                 )
-            if _health(endpoint):
+            if _health(endpoint + self.health_path):
                 return
             time.sleep(0.1)
         raise TimeoutError(
@@ -87,6 +111,7 @@ class _NativeServer:
         )
 
     def metadata(self) -> dict[str, object]:
+        """Describe the exact executable, distribution, startup, PID and log."""
         return {
             "engine": self.runtime.engine,
             "name": self.runtime.name,
@@ -100,6 +125,7 @@ class _NativeServer:
         }
 
     def close(self) -> None:
+        """Terminate only the owned process and release the log handle."""
         try:
             if self.process is not None and self.process.poll() is None:
                 self.process.terminate()
@@ -112,78 +138,3 @@ class _NativeServer:
             if self._log is not None:
                 self._log.close()
                 self._log = None
-
-
-class LlamaServer(_NativeServer):
-    """A llama-server distribution selected explicitly by its runtime preset."""
-
-    def _command(self, port: int) -> list[str]:
-        options = self.runtime.settings
-        gpu_layers = options.get("gpu_layers", "auto")
-        if gpu_layers == "auto":
-            gpu_layers = "all" if platform.system() == "Darwin" else "0"
-        return [
-            str(self.prepared.binary),
-            "-m",
-            str(self.prepared.model_path),
-            "--host",
-            "127.0.0.1",
-            "--port",
-            str(port),
-            "-c",
-            str(options.get("context_size", 8192)),
-            "-np",
-            "1",
-            "-ngl",
-            str(gpu_layers),
-            "-t",
-            str(options.get("threads", 6)),
-            "-tb",
-            str(options.get("threads_batch", options.get("threads", 6))),
-            "--alias",
-            self.alias,
-            "--metrics",
-            "--perf",
-        ]
-
-    def metadata(self) -> dict[str, object]:
-        return super().metadata() | {
-            "gpu_layers_requested": self.command[self.command.index("-ngl") + 1]
-        }
-
-    def metrics(self) -> str | None:
-        endpoint = self.base_url.removesuffix("/v1") + "/metrics"
-        try:
-            with urllib.request.urlopen(endpoint, timeout=2) as response:
-                return response.read().decode("utf-8")
-        except OSError:
-            return None
-
-
-class WhisperServer(_NativeServer):
-    """Resident Whisper model exposed through a transcription HTTP endpoint."""
-
-    def _command(self, port: int) -> list[str]:
-        settings = self.runtime.settings
-        command = [
-            str(self.prepared.binary),
-            "--model",
-            str(self.prepared.model_path),
-            "--host",
-            "127.0.0.1",
-            "--port",
-            str(port),
-            "--threads",
-            str(settings.get("threads", 6)),
-            "--inference-path",
-            "/v1/audio/transcriptions",
-            "--print-progress",
-        ]
-        use_gpu = settings.get("use_gpu", "auto")
-        if type(use_gpu) is not bool and use_gpu != "auto":
-            raise ValueError("Whisper.cpp use_gpu must be true, false, or 'auto'.")
-        if use_gpu is False or (use_gpu == "auto" and platform.system() != "Darwin"):
-            command.append("--no-gpu")
-        if self.prepared.vad_model_path is not None:
-            command.extend(["--vad-model", str(self.prepared.vad_model_path)])
-        return command

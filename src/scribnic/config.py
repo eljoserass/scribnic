@@ -20,12 +20,14 @@ class ModelAsset:
     revision: str
     filename: str
     sha256: str
+    quantization: str | None = None
 
 
 @dataclass(frozen=True)
 class ModelConfig:
+    """Identify model weights, artifact capabilities and model-specific settings."""
+
     name: str
-    backend: str
     inputs: tuple[ArtifactKind, ...]
     output: ArtifactKind
     repository: str | None = None
@@ -33,10 +35,13 @@ class ModelConfig:
     filename: str | None = None
     sha256: str | None = None
     settings: dict[str, object] = field(default_factory=dict)
+    quantization: str | None = None
 
 
 @dataclass(frozen=True)
 class RuntimeConfig:
+    """Describe an inference engine distribution or an externally owned endpoint."""
+
     name: str
     engine: str
     settings: dict[str, object] = field(default_factory=dict)
@@ -45,9 +50,12 @@ class RuntimeConfig:
 
 @dataclass(frozen=True)
 class StepConfig:
+    """Bind a protocol adapter to weights, a service and an artifact contract."""
+
     name: str
     model: ModelConfig
     runtime: RuntimeConfig
+    backend: str
     template: Path | None = None
     source: str | None = None
     instruction: str | None = None
@@ -136,64 +144,55 @@ def validate_settings(step: StepConfig) -> None:
     for key in ("vad", "word_timestamps"):
         if key in step.model.settings and type(step.model.settings[key]) is not bool:
             raise ValueError(f"{step.name}.{key} must be true or false.")
-    if step.model.backend == "nvidia_speech":
-        _validate_nvidia(step)
+    _validate_adapter(step)
 
 
-def _validate_nvidia(step: StepConfig) -> None:
-    """Check NVIDIA capability and mode choices before downloading weights."""
-    if step.runtime.engine not in {"nemo_cpp", "nemo_python"}:
-        raise ValueError("NVIDIA speech requires nemo_cpp or nemo_python.")
-    if step.model.settings.get("mode", "offline") not in {"offline", "streaming"}:
-        raise ValueError("NVIDIA speech mode must be offline or streaming.")
+def _validate_adapter(step: StepConfig) -> None:
+    """Reject incompatible protocols, formats and outputs before downloading assets."""
+    engine = step.runtime.engine
+    if step.backend == "openai_chat":
+        if engine not in {"llama_cpp", "external_endpoint"}:
+            raise ValueError("openai_chat needs llama_cpp or external_endpoint.")
+        return
+    if step.backend == "moss_transcribe_diarize":
+        if engine != "transformers":
+            raise ValueError("The local MOSS backend needs the Transformers runtime.")
+        return
+    if step.backend != "openai_transcription":
+        return
+    if engine not in {"whisper_cpp", "nemo_cpp", "external_endpoint"}:
+        raise ValueError(
+            "openai_transcription needs a speech server or external endpoint."
+        )
     if step.model.output not in {"transcript", "diarized_transcript"}:
-        raise ValueError("NVIDIA speech produces transcript or diarized_transcript.")
-    if (
-        step.model.output == "diarized_transcript"
-        and "diarization" not in step.companions
-    ):
-        raise ValueError("Diarized NVIDIA speech needs a diarization companion model.")
-    maximum = step.model.settings.get("max_speakers", 8)
-    if type(maximum) is not int or not 1 <= maximum <= 8:
-        raise ValueError("max_speakers must be an integer between 1 and 8.")
-    if step.runtime.engine == "nemo_cpp" and maximum != 8:
+        raise ValueError("Transcription produces transcript or diarized_transcript.")
+    response = step.model.settings.get("response_schema")
+    if response not in {"whisper_segments", "nemo_words", "moss_segments"}:
+        raise ValueError("Select an explicit transcription response_schema.")
+    mode = step.model.settings.get("mode", "offline")
+    if mode not in {"offline", "streaming"}:
+        raise ValueError("Speech mode must be offline or streaming.")
+    if response == "whisper_segments" and step.model.output != "transcript":
+        raise ValueError("Whisper segments do not provide speaker diarization.")
+    if mode == "streaming" and response != "nemo_words":
         raise ValueError(
-            "NeMo-Speech.cpp uses the model's fixed eight-speaker capacity; max_speakers is adjustable only in nemo_python."
+            "Streaming input currently requires the NeMo WebSocket protocol."
         )
-    if (
-        step.runtime.engine == "nemo_python"
-        and step.model.settings.get("mode") == "streaming"
-        and step.model.output != "diarized_transcript"
-    ):
-        raise ValueError(
-            "NeMo masked streaming needs diarized_transcript output and a diarization companion."
-        )
-    suffix = ".gguf" if step.runtime.engine == "nemo_cpp" else ".nemo"
-    for model in (step.model, *step.companions.values()):
-        if not model.filename or not model.filename.endswith(suffix):
-            raise ValueError(f"{step.runtime.engine} requires {suffix} model files.")
-    options = step.model.settings.get("streaming", {})
-    allowed = {
-        "fifo_len",
-        "spkcache_len",
-        "spkcache_update_period",
-        "cache_gating",
-        "cache_gating_buffer_size",
-        "binary_diar_preds",
-        "fix_prev_words_count",
-        "update_prev_words_sentence",
-        "ignored_initial_frame_steps",
-    }
-    if not isinstance(options, dict) or options.keys() - allowed:
-        raise ValueError(
-            "Unknown NeMo streaming settings; mask strategy and input paths are fixed by the adapter."
-        )
-    for key, value in options.items():
-        if key in {"cache_gating", "binary_diar_preds"}:
-            if type(value) is not bool:
-                raise ValueError(f"{key} must be true or false.")
-        else:
-            _validate_number(step, key, value, integer=True, allow_zero=False)
+    if engine == "nemo_cpp":
+        if response != "nemo_words":
+            raise ValueError("NeMo-Speech.cpp requires the nemo_words response schema.")
+        if (
+            step.model.output == "diarized_transcript"
+            and "diarization" not in step.companions
+        ):
+            raise ValueError(
+                "Diarized NVIDIA speech needs a diarization companion model."
+            )
+        for model in (step.model, *step.companions.values()):
+            if not model.filename or not model.filename.endswith(".gguf"):
+                raise ValueError("NeMo-Speech.cpp requires .gguf model files.")
+    if engine == "whisper_cpp" and response != "whisper_segments":
+        raise ValueError("Whisper.cpp requires the whisper_segments response schema.")
     gap = step.model.settings.get("sentence_gap_seconds", 1.0)
     _validate_number(step, "sentence_gap_seconds", gap, integer=False, allow_zero=False)
 
@@ -237,11 +236,11 @@ def _preset_path(name: str, category: str, directory: Path) -> Path:
 
 
 def _load_model(name: str, directory: Path, overrides: dict) -> ModelConfig:
+    """Read weight identity and artifact capabilities independently of the adapter."""
     data = _read_toml(_preset_path(name, "models", directory))
     settings = data.get("settings", {}) | overrides
     return ModelConfig(
         name=data.get("name", name),
-        backend=data["backend"],
         inputs=tuple(artifact_kind(kind) for kind in data["inputs"]),
         output=artifact_kind(data["output"]),
         repository=data.get("repository"),
@@ -249,6 +248,7 @@ def _load_model(name: str, directory: Path, overrides: dict) -> ModelConfig:
         filename=data.get("filename"),
         sha256=data.get("sha256"),
         settings=settings,
+        quantization=data.get("quantization"),
     )
 
 
@@ -271,6 +271,7 @@ def _load_asset(name: str, directory: Path) -> ModelAsset:
         revision=data["revision"],
         filename=data["filename"],
         sha256=data["sha256"],
+        quantization=data.get("quantization"),
     )
 
 
@@ -285,6 +286,7 @@ def _load_step(name: str, data: dict, directory: Path) -> StepConfig:
     return StepConfig(
         name=name,
         model=model,
+        backend=data["backend"],
         runtime=_load_runtime(
             data["runtime"], directory, data.get("runtime_settings", {})
         ),

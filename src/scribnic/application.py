@@ -19,7 +19,7 @@ def new_run_directory() -> Path:
     return Path("runs") / f"{stamp}-{uuid4().hex[:8]}"
 
 
-def prepare_workflow(
+def setup_workflow(
     workflow: str | Path | WorkflowConfig, *, offline: bool = False
 ) -> None:
     """Populate/check the configured asset cache without loading models into memory."""

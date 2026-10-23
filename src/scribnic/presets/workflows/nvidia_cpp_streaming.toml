@@ -4,28 +4,24 @@ default_output = "note"
 download_missing = true
 
 [steps.speech]
-model = "nemotron_3_5_asr_cpp"
+backend = "openai_transcription"
+model = "nemotron-3.5-asr-streaming-0.6b.q8_0"
 runtime = "nemo_cpp"
 output = "diarized_transcript"
 
 [steps.speech.companions]
-diarization = "nemotron_3_diarization_cpp"
+diarization = "Nemotron-3-Diarization.q8_0"
 
 [steps.speech.model_settings]
 mode = "streaming"
 language = "es-ES"
-max_speakers = 8
 
 [steps.note]
-model = "bonsai_2_2b"
+backend = "openai_chat"
+model = "Ternary-Bonsai-2-2B-PQ2_0"
 runtime = "llama_cpp_prism"
 template = "soap_es"
 source = "speech"
 
 [steps.note.model_settings]
 temperature = 0.0
-
-
-# Avoid keeping Bonsai resident during the NeMo checkpoint loading peak.
-[steps.note.runtime_settings]
-lazy_load = true

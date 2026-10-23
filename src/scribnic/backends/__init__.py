@@ -1,35 +1,25 @@
 """Construct only the backend selected by a workflow step."""
 
+from typing import TYPE_CHECKING
+
 from ..config import StepConfig
 from ..downloads import PreparedStep
 
+if TYPE_CHECKING:
+    from ..workflow import Backend
 
-def create_backend(step: StepConfig, prepared: PreparedStep):
-    """Construct the selected adapter without importing unrelated model libraries."""
-    if step.model.backend == "nvidia_speech":
-        if step.runtime.engine == "nemo_cpp":
-            from .nemo_cpp import NemoCPP
 
-            return NemoCPP(step, prepared)
-        if step.runtime.engine == "nemo_python":
-            from .nemo import NemoSpeech
+def create_backend(step: StepConfig, prepared: PreparedStep) -> "Backend":
+    """Import only the protocol adapter explicitly selected by this workflow step."""
+    from importlib import import_module
 
-            return NemoSpeech(step, prepared)
-        raise ValueError("NVIDIA speech needs nemo_cpp or nemo_python.")
-    if step.model.backend == "whisper_cpp":
-        from .whisper_cpp import WhisperCPP
-
-        return WhisperCPP(step, prepared)
-    if step.model.backend == "http_generation":
-        from .http_generation import HTTPGeneration
-
-        return HTTPGeneration(step, prepared)
-    if step.model.backend == "moss_transcribe_diarize":
-        from .moss_transcribe_diarize import MossTranscribeDiarize
-
-        if step.runtime.engine != "transformers":
-            raise ValueError(
-                "MOSS-Transcribe-Diarize currently uses the Transformers runtime."
-            )
-        return MossTranscribeDiarize(step, prepared)
-    raise ValueError(f"Unknown workflow backend: {step.model.backend}")
+    adapters = {
+        "openai_chat": ("openai_chat", "OpenAIChat"),
+        "openai_transcription": ("openai_transcription", "OpenAITranscription"),
+        "moss_transcribe_diarize": ("moss_transcribe_diarize", "MossTranscribeDiarize"),
+    }
+    if step.backend not in adapters:
+        raise ValueError(f"Unknown workflow backend: {step.backend}")
+    module_name, class_name = adapters[step.backend]
+    module = import_module("." + module_name, package=__package__)
+    return getattr(module, class_name)(step, prepared)

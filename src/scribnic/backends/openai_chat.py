@@ -1,83 +1,51 @@
 """OpenAI-compatible note generation for local or explicitly remote endpoints."""
 
-import os
 from time import perf_counter
+from typing import TYPE_CHECKING
 
 from ..artifacts import Artifact, DiarizedTranscript, Note, StepOutput, Transcript
 from ..config import StepConfig
 from ..downloads import PreparedStep
 from ..notes import format_conversation, note_instruction
-from ..runtimes import LlamaServer
+from .connection import OpenAIConnection
+
+if TYPE_CHECKING:
+    from openai import OpenAI
+    from openai.types.chat import ChatCompletion
 
 
-class HTTPGeneration:
-    def __init__(self, step: StepConfig, prepared: PreparedStep):
-        """Configure generation, optionally deferring model loading until its step."""
+class OpenAIChat:
+    """Generate notes through Chat Completions, retaining one connection per session."""
+
+    def __init__(self, step: StepConfig, prepared: PreparedStep) -> None:
+        """Configure weights, service and note settings without loading resources."""
         self.step = step
-        self.prepared = prepared
-        self.server: LlamaServer | None = None
+        self.connection = OpenAIConnection(step, prepared)
         self.model = str(step.model.settings.get("served_model", step.model.name))
-        self.load_seconds = 0.0
-        self.client = None
-        if not step.runtime.settings.get("lazy_load", False):
-            self._load()
 
-    def _load(self) -> None:
-        """Start/check the configured service once and record its loading time."""
-        if self.client is not None:
-            return
-        from openai import OpenAI
+    @property
+    def client(self) -> "OpenAI | None":
+        """Expose the initialized protocol client, or None before startup."""
+        return self.connection.client
 
+    def start(self) -> float:
+        """Load/check the configured service once and return initial startup time."""
         started = perf_counter()
-        base_url = self._endpoint(self.prepared)
-        settings = self.step.runtime.settings
-        key_name = str(settings.get("api_key_env", "SCRIBNIC_API_KEY"))
-        self.client = OpenAI(
-            base_url=base_url,
-            api_key=os.getenv(key_name) or "local",
-            timeout=float(settings.get("timeout", 120)),
-            max_retries=0,
-        )
-        try:
-            self._check_available()
-        except Exception:
-            self.close()
-            raise
-        self.load_seconds = perf_counter() - started
-
-    def _endpoint(self, prepared: PreparedStep) -> str:
-        if self.step.runtime.engine == "llama_cpp":
-            self.server = LlamaServer(self.step.runtime, prepared, self.model)
-            return self.server.start()
-        if self.step.runtime.engine != "http":
-            raise ValueError(
-                f"Unsupported generation runtime: {self.step.runtime.engine}"
-            )
-        settings = self.step.runtime.settings
-        environment = str(settings.get("base_url_env", "SCRIBNIC_BASE_URL"))
-        base_url = os.getenv(environment) or settings.get("base_url")
-        if not base_url:
-            raise ValueError("An HTTP runtime needs a base_url.")
-        return str(base_url)
+        elapsed = self.connection.start()
+        if elapsed:
+            try:
+                self._check_available()
+            except ValueError:
+                self.close()
+                raise
+        return perf_counter() - started if elapsed else 0.0
 
     def _check_available(self) -> None:
-        from openai import OpenAIError
+        """Verify the selected model ID through the service model inventory."""
+        self.connection.check_model(self.model)
 
-        if not self.step.runtime.settings.get("check_models", True):
-            return
-        try:
-            models = self.client.with_options(timeout=5).models.list()
-            identifiers = [model.id for model in models]
-        except OpenAIError as error:
-            raise ValueError(
-                f"Cannot reach note endpoint {self.client.base_url}: {error}"
-            ) from error
-        if self.model not in identifiers:
-            raise ValueError(
-                f"Note model {self.model!r} is unavailable. Available IDs: {identifiers}"
-            )
-
-    def _request(self, conversation: str) -> dict:
+    def _request(self, conversation: str) -> dict[str, object]:
+        """Build a bounded note request with explicit model sampling settings."""
         settings = self.step.model.settings
         maximum = int(settings.get("max_input_chars", 12000))
         if len(conversation) > maximum:
@@ -123,7 +91,7 @@ class HTTPGeneration:
         if not conversation.strip():
             raise ValueError("Cannot generate a note from an empty transcript.")
         request = self._request(conversation)
-        self._load()
+        load_seconds = self.start()
         try:
             response = self.client.chat.completions.create(**request)
         except OpenAIError as error:
@@ -132,22 +100,21 @@ class HTTPGeneration:
         metadata = {
             "model": response.model,
             "base_url": str(self.client.base_url),
-            "runtime": self.server.metadata() if self.server else {"engine": "http"},
+            "runtime": self.connection.runtime.metadata(),
             "usage": response.usage.model_dump() if response.usage else None,
             "timings": (response.model_extra or {}).get("timings"),
-            "load_seconds": self.load_seconds,
-            "server_metrics": self.server.metrics() if self.server else None,
+            "load_seconds": load_seconds,
+            "server_metrics": self.connection.runtime.metrics(),
         }
-        self.load_seconds = 0.0
         return StepOutput(Note(note), metadata)
 
     def process_ids(self) -> tuple[int, ...]:
-        if self.server is not None and self.server.process is not None:
-            return (self.server.process.pid,)
-        return ()
+        """Expose only the service processes owned by this session."""
+        return self.connection.runtime.process_ids()
 
     @staticmethod
-    def _content(response) -> str:
+    def _content(response: "ChatCompletion") -> str:
+        """Reject missing, truncated or thinking output rather than accepting a partial note."""
         if not response.choices:
             raise ValueError("The note model returned no choices.")
         choice = response.choices[0]
@@ -165,11 +132,5 @@ class HTTPGeneration:
         return text.strip()
 
     def close(self) -> None:
-        """Close an initialized client and the native server owned by this backend."""
-        try:
-            if self.client is not None:
-                self.client.close()
-                self.client = None
-        finally:
-            if self.server is not None:
-                self.server.close()
+        """Release the client and the service processes owned by this session."""
+        self.connection.close()

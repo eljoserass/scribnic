@@ -1,0 +1,26 @@
+name = "moss_bonsai_sglang"
+inputs = ["audio", "transcript", "diarized_transcript"]
+default_output = "note"
+download_missing = true
+
+[steps.speech]
+backend = "openai_transcription"
+model = "moss_transcribe_diarize"
+runtime = "sglang_omni_endpoint"
+
+[steps.speech.model_settings]
+response_schema = "moss_segments"
+served_model = "OpenMOSS-Team/MOSS-Transcribe-Diarize"
+language = "es"
+temperature = 0.0
+max_new_tokens = 16384
+
+[steps.note]
+backend = "openai_chat"
+model = "Ternary-Bonsai-2-2B-PQ2_0"
+runtime = "llama_cpp_prism"
+template = "soap_es"
+source = "speech"
+
+[steps.note.model_settings]
+temperature = 0.0

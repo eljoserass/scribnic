@@ -4,6 +4,7 @@ import hashlib
 import os
 import platform
 import shutil
+import subprocess
 import tarfile
 import tempfile
 import urllib.request
@@ -73,6 +74,7 @@ def _extract_archive(archive: Path, directory: Path) -> None:
 
 
 def prepare_binary(runtime: RuntimeConfig, cache: Path, download: bool) -> Path:
+    """Install a pinned release or build its pinned source when no binary ships."""
     environment = str(runtime.settings.get("binary_env", ""))
     explicit = os.getenv(environment) or runtime.settings.get("binary")
     if explicit:
@@ -95,9 +97,69 @@ def prepare_binary(runtime: RuntimeConfig, cache: Path, download: bool) -> Path:
     archive = directory / Path(asset["url"]).name
     download_file(asset["url"], archive, asset["sha256"], allowed=download)
     _extract_archive(archive, directory)
+    if runtime.settings.get("build_target"):
+        _build_runtime(runtime, directory, download=download)
     if not binary.is_file():
         raise ValueError(f"Runtime archive did not contain {asset['binary']}.")
     return binary
+
+
+def _build_runtime(runtime: RuntimeConfig, directory: Path, *, download: bool) -> None:
+    """Build a selected native target, keeping tools out of Python client dependencies.
+
+    A compiler must be installed. Use a system CMake or uv's isolated pinned CMake
+    tool environment. Keep build output in the versioned cache for diagnostics.
+    """
+    cmake = shutil.which("cmake")
+    if cmake:
+        command = [cmake]
+    elif download and shutil.which("uvx"):
+        command = [shutil.which("uvx"), "--from", "cmake==4.1.0", "cmake"]
+    else:
+        raise ValueError(
+            "Building this runtime needs CMake and a C/C++ compiler. Install them, then repeat scribnic setup."
+        )
+    source = directory / str(runtime.settings["source_root"])
+    build = source / "build"
+    configure = [
+        *command,
+        "-S",
+        str(source),
+        "-B",
+        str(build),
+        "-DCMAKE_BUILD_TYPE=Release",
+        *runtime.settings.get("cmake_options", []),
+    ]
+    compile_command = [
+        *command,
+        "--build",
+        str(build),
+        "--target",
+        str(runtime.settings["build_target"]),
+        "--config",
+        "Release",
+        "--parallel",
+        "6",
+    ]
+    log = directory / "build.log"
+    with log.open("w", encoding="utf-8") as output:
+        try:
+            subprocess.run(
+                configure,
+                stdout=output,
+                stderr=subprocess.STDOUT,
+                check=True,
+                timeout=300,
+            )
+            subprocess.run(
+                compile_command,
+                stdout=output,
+                stderr=subprocess.STDOUT,
+                check=True,
+                timeout=1200,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+            raise RuntimeError(f"Native runtime build failed. See {log}") from error
 
 
 def _hub_cache() -> Path:
@@ -144,11 +206,16 @@ def prepare_model(
     """Prepare the format selected explicitly by a model/runtime configuration."""
     if runtime.engine == "transformers":
         return _prepare_snapshot(model, download)
-    if runtime.engine not in {"llama_cpp", "whisper_cpp", "nemo_cpp", "nemo_python"}:
+    if runtime.engine not in {"llama_cpp", "whisper_cpp", "nemo_cpp"}:
         return None
     if not all((model.repository, model.revision, model.filename, model.sha256)):
         raise ValueError(f"Model {model.name} needs a pinned file and checksum.")
     path = cache / "models" / model.name / model.revision / model.filename
+    if not path.exists():
+        # Variant names can change without downloading identical pinned weights.
+        for cached in (cache / "models").glob(f"*/{model.revision}/{model.filename}"):
+            if sha256_file(cached) == model.sha256:
+                return cached
     url = (
         f"https://huggingface.co/{model.repository}/resolve/"
         f"{model.revision}/{model.filename}"
@@ -158,6 +225,8 @@ def prepare_model(
 
 @dataclass(frozen=True)
 class PreparedStep:
+    """Keep verified resource paths without loading models or owning processes."""
+
     cache: Path
     model_path: Path | None = None
     binary: Path | None = None
@@ -179,7 +248,10 @@ def prepare_vad(step: StepConfig, cache: Path, download: bool) -> Path | None:
 
 
 class ResourceManager:
-    def __init__(self, *, cache: Path | None = None, download: bool = True):
+    """Prepare only configured assets and retain their paths for one session."""
+
+    def __init__(self, *, cache: Path | None = None, download: bool = True) -> None:
+        """Select a versioned cache and whether missing assets may be downloaded."""
         self.cache = cache or cache_directory()
         self.download = download
         self._prepared: dict[str, PreparedStep] = {}
@@ -200,3 +272,36 @@ class ResourceManager:
                 self.cache, model, binary, vad, companions
             )
         return self._prepared[step.name]
+
+
+def model_provenance(step: StepConfig, prepared: PreparedStep) -> dict:
+    """Describe actual prepared weights, including the companion diarizer."""
+    if prepared.model_path is None:
+        return {
+            "model": {
+                "name": step.model.name,
+                "repository": step.model.repository,
+                "revision": step.model.revision,
+                "quantization": step.model.quantization,
+                "verification_scope": "configuration only; weights owned by external service",
+            }
+        }
+    models = {"primary": (step.model, prepared.model_path)}
+    models.update(
+        {
+            role: (model, prepared.companions[role])
+            for role, model in step.companions.items()
+        }
+    )
+    return {
+        role: {
+            "name": model.name,
+            "repository": model.repository,
+            "revision": model.revision,
+            "filename": path.name,
+            "sha256": sha256_file(path),
+            "path": str(path),
+            "quantization": model.quantization,
+        }
+        for role, (model, path) in models.items()
+    }

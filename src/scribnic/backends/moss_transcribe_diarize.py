@@ -51,12 +51,19 @@ def parse_transcript(text: str) -> DiarizedTranscript:
 
 
 class MossTranscribeDiarize:
-    def __init__(self, step: StepConfig, prepared: PreparedStep):
+    """Retain the optional Transformers model and processor for one session."""
+
+    def __init__(self, step: StepConfig, prepared: PreparedStep) -> None:
+        """Retain pinned snapshot settings without importing Torch or loading weights."""
         self.step = step
         self.prepared = prepared
         self.model = None
         self.processor = None
         self.device = None
+
+    def start(self) -> float:
+        """Load the optional model before measured runs, returning initial load time."""
+        return self._load()
 
     def _load(self) -> float:
         if self.model is not None:

@@ -41,7 +41,7 @@
       <thead><tr><th>Proceso</th><th>Pico RSS muestreado</th><th>CPU media</th></tr></thead>
       <tbody>${resources}</tbody>
     </table></div>
-    <p class="muted">CPU expresada en cores equivalentes. El muestreo puede omitir picos breves. Los recursos de servidores remotos quedan fuera de este proceso.</p>
+    <p class="muted">CPU expresada en cores equivalentes. RSS es memoria residente por proceso, no VRAM. La suma se calcula en cada muestreo y puede contar páginas compartidas varias veces; no suma picos individuales. El muestreo puede omitir picos breves. Los servicios externos necesitan su propia instrumentación.</p>
   </section>
   ${profiling}
   <details>

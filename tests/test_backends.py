@@ -9,8 +9,8 @@ from unittest.mock import patch
 from helpers import MODEL, NOTE, note_server
 
 from scribnic import DiarizedTranscript, SpeakerSegment, Transcript, open_workflow
-from scribnic.backends.http_generation import HTTPGeneration
 from scribnic.backends.moss_transcribe_diarize import parse_transcript
+from scribnic.backends.openai_chat import OpenAIChat
 from scribnic.config import load_workflow
 from scribnic.downloads import PreparedStep, download_file
 
@@ -20,7 +20,7 @@ def http_step(url: str):
     step = config.steps[0]
     runtime = replace(
         step.runtime,
-        engine="http",
+        engine="external_endpoint",
         settings={"base_url": url, "base_url_env": "TEST_SCRIBNIC_UNUSED"},
     )
     model = replace(step.model, settings=step.model.settings | {"served_model": MODEL})
@@ -28,6 +28,17 @@ def http_step(url: str):
 
 
 class HTTPBackendTests(unittest.TestCase):
+    def test_local_moss_rejects_a_service_runtime_before_preparation(self) -> None:
+        """A local model adapter cannot silently replace a service protocol client."""
+        config = load_workflow("moss_bonsai")
+        speech = config.steps[0]
+        incompatible = replace(
+            speech, runtime=replace(speech.runtime, engine="external_endpoint")
+        )
+        config = replace(config, steps=(incompatible, *config.steps[1:]))
+        with self.assertRaisesRegex(ValueError, "Transformers runtime"):
+            open_workflow(config, prepare=False)
+
     def test_deferred_note_loading_checks_service_only_when_note_is_requested(self):
         """A deferred service consumes no resources while the speech step loads."""
         with note_server() as (url, _):
@@ -38,8 +49,8 @@ class HTTPBackendTests(unittest.TestCase):
                     step.runtime, settings=step.runtime.settings | {"lazy_load": True}
                 ),
             )
-            with patch.object(HTTPGeneration, "_check_available") as check:
-                backend = HTTPGeneration(step, PreparedStep(Path("unused")))
+            with patch.object(OpenAIChat, "_check_available") as check:
+                backend = OpenAIChat(step, PreparedStep(Path("unused")))
                 self.assertIsNone(backend.client)
                 check.assert_not_called()
                 try:
@@ -51,7 +62,7 @@ class HTTPBackendTests(unittest.TestCase):
 
     def test_bonsai_sampling_profile_and_supplied_plain_text(self):
         with note_server() as (url, requests):
-            backend = HTTPGeneration(http_step(url), PreparedStep(Path("unused")))
+            backend = OpenAIChat(http_step(url), PreparedStep(Path("unused")))
             try:
                 result = backend.run(Transcript.from_text("Paciente: tos desde ayer."))
             finally:
@@ -71,9 +82,9 @@ class HTTPBackendTests(unittest.TestCase):
     def test_model_identity_and_incomplete_notes_are_checked(self):
         with note_server(models=[]) as (url, _):
             with self.assertRaisesRegex(ValueError, "unavailable"):
-                HTTPGeneration(http_step(url), PreparedStep(Path("unused")))
+                OpenAIChat(http_step(url), PreparedStep(Path("unused"))).start()
         with note_server(finish_reason="length") as (url, _):
-            backend = HTTPGeneration(http_step(url), PreparedStep(Path("unused")))
+            backend = OpenAIChat(http_step(url), PreparedStep(Path("unused")))
             try:
                 with self.assertRaisesRegex(ValueError, "output limit"):
                     backend.run(Transcript.from_text("hello"))
@@ -83,7 +94,7 @@ class HTTPBackendTests(unittest.TestCase):
     def test_removing_speakers_changes_the_actual_model_input(self):
         transcript = DiarizedTranscript((SpeakerSegment("Tengo tos.", "S02"),))
         with note_server() as (url, requests):
-            backend = HTTPGeneration(http_step(url), PreparedStep(Path("unused")))
+            backend = OpenAIChat(http_step(url), PreparedStep(Path("unused")))
             try:
                 backend.run(transcript)
                 backend.run(transcript.without_speakers())
@@ -101,7 +112,7 @@ class HTTPBackendTests(unittest.TestCase):
                     step.model, settings=step.model.settings | {"max_input_chars": 1}
                 ),
             )
-            backend = HTTPGeneration(step, PreparedStep(Path("unused")))
+            backend = OpenAIChat(step, PreparedStep(Path("unused")))
             try:
                 with self.assertRaisesRegex(ValueError, "Nothing was truncated"):
                     backend.run(Transcript.from_text("hello"))

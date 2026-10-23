@@ -1,5 +1,4 @@
 name = "moss_transcribe_diarize"
-backend = "moss_transcribe_diarize"
 inputs = ["audio"]
 output = "diarized_transcript"
 repository = "OpenMOSS-Team/MOSS-Transcribe-Diarize"

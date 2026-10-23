@@ -7,9 +7,12 @@ from contextlib import ExitStack
 from contextvars import ContextVar
 from pathlib import Path
 from time import monotonic
-from typing import TextIO
+from typing import TYPE_CHECKING, TextIO
 
 from opentelemetry import metrics, trace
+
+if TYPE_CHECKING:
+    from .config import StepConfig
 
 _providers: ContextVar[tuple | None] = ContextVar(
     "scribnic_otel_providers", default=None
@@ -199,3 +202,22 @@ class Telemetry:
                 _providers.reset(self._token)
                 self._token = None
             self._cleanup.close()
+
+
+def speech_metrics(
+    step: "StepConfig", *, elapsed_seconds: float, audio_seconds: float
+) -> None:
+    """Export comparable speech duration and RTF through the caller's OTel SDK."""
+    attributes = {
+        "scribnic.model.name": step.model.name,
+        "scribnic.runtime.engine": step.runtime.engine,
+        "scribnic.speech.mode": step.model.settings.get("mode", "offline"),
+    }
+    for name, value, unit in (
+        ("processing.duration", elapsed_seconds, "s"),
+        ("audio.duration", audio_seconds, "s"),
+        ("real_time_factor", elapsed_seconds / audio_seconds, "1"),
+    ):
+        meter().create_histogram("scribnic.speech." + name, unit=unit).record(
+            value, attributes
+        )

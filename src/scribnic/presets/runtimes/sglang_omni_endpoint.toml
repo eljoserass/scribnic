@@ -1,0 +1,9 @@
+name = "sglang_omni_endpoint"
+engine = "external_endpoint"
+
+# This is a client configuration, not a local installation of SGLang Omni.
+[settings]
+base_url = "http://127.0.0.1:8000/v1"
+base_url_env = "SCRIBNIC_MOSS_BASE_URL"
+api_key_env = "SCRIBNIC_MOSS_API_KEY"
+timeout = 600

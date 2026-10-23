@@ -1,11 +1,12 @@
-name = "ternary-bonsai-2-2b"
-backend = "http_generation"
+name = "Ternary-Bonsai-2-2B-PQ2_0"
 inputs = ["transcript", "diarized_transcript"]
 output = "note"
 repository = "prism-ml/Ternary-Bonsai-2-2B-gguf"
 revision = "683f7be2629342a50987627b40881e54761a2430"
 filename = "Ternary-Bonsai-2-2B-PQ2_0.gguf"
 sha256 = "d5f01a4ecaf49239653308ee732ad1a0c5f802c0ddb997549fc7b694c8b45928"
+
+quantization = "PQ2_0"
 
 # Prism's non-thinking profile for the small Bonsai 2 models.
 # https://github.com/PrismML-Eng/Bonsai-demo/blob/main/SMALL-MODELS.md

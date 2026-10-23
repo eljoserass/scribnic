@@ -69,14 +69,22 @@ def _report_steps(result: RunResult) -> str:
 
 
 def _report_resources(result: RunResult) -> str:
+    """Name sampled processes instead of hiding all inference engines as runtime."""
     rows = []
     for process in result.resources.get("processes", []):
         gib = process["peak_sampled_rss_bytes"] / 1024**3
         role = html.escape(process["role"])
+        name = html.escape(process.get("name", role))
         cores = process["average_cpu_cores"]
         rows.append(
-            f"<tr><td>{role} · PID {process['pid']}</td>"
+            f"<tr><td>{name} · {role} · PID {process['pid']}</td>"
             f"<td>{gib:.2f} GiB</td><td>{cores:.2f}</td></tr>"
+        )
+    combined = result.resources.get("peak_sampled_process_rss_sum_bytes")
+    if combined is not None:
+        rows.append(
+            f"<tr><td>Pico de la suma RSS por muestreo</td>"
+            f"<td>{combined / 1024**3:.2f} GiB</td><td>—</td></tr>"
         )
     return "".join(rows)
 

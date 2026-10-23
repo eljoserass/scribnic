@@ -4,6 +4,7 @@ default_output = "note"
 download_missing = true
 
 [steps.speech]
+backend = "openai_transcription"
 model = "whisper_small_q8_0"
 runtime = "whisper_cpp"
 
@@ -11,7 +12,8 @@ runtime = "whisper_cpp"
 vad = true
 
 [steps.note]
-model = "bonsai_2_2b"
+backend = "openai_chat"
+model = "Ternary-Bonsai-2-2B-PQ2_0"
 runtime = "llama_cpp_prism"
 template = "soap_es"
 source = "speech"

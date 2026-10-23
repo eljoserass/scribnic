@@ -1,59 +1,59 @@
-"""NVIDIA artifact, managed runtime, lifecycle, and optional profiler contracts."""
+"""Speech service contracts without downloading models or importing Torch."""
 
 import hashlib
-import importlib.util
-import json
-import subprocess
 import tarfile
 import tempfile
 import unittest
-import wave
 from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
-from scribnic import AudioFile, DiarizedTranscript, Transcript, open_workflow
-from scribnic.backends.nemo import NemoSpeech, attribute_words
-from scribnic.backends.nemo_cpp import NemoCPP
-from scribnic.backends.nvidia_speech import parse_speech
+from helpers import transcription_server
+from test_whisper_cpp import FakeServer, prepared_files, write_audio
+
+from scribnic import Transcript, open_workflow
+from scribnic.backends.openai_transcription import OpenAITranscription
+from scribnic.backends.transcription_formats import parse_segments, parse_words
 from scribnic.config import RuntimeConfig, load_workflow
-from scribnic.downloads import PreparedStep, prepare_binary
-from scribnic.profiling import profile_directory
+from scribnic.downloads import ResourceManager, prepare_binary
+from scribnic.runtimes import NemoServer
 from scribnic.storage import artifact_directory
 
 
 class NvidiaContractTests(unittest.TestCase):
-    """Test actual interchange contracts without downloading weights or importing NeMo."""
+    """Exercise artifact capabilities, pinned weight variants and response schemas."""
 
-    def test_presets_pin_both_models_and_validate_without_optional_imports(self):
-        """All four experiment paths are discoverable through the ordinary API."""
-        for runtime in ("cpp", "nemo"):
-            for mode in ("offline", "streaming"):
-                with open_workflow(
-                    f"nvidia_{runtime}_{mode}", prepare=False
-                ) as session:
-                    step = session.config.steps[0]
-                    self.assertEqual(step.model.settings["language"], "es-ES")
-                    self.assertEqual(step.model.output, "diarized_transcript")
-                    self.assertEqual(len(step.model.revision), 40)
-                    self.assertEqual(len(step.companions["diarization"].sha256), 64)
+    def test_presets_pin_both_models_without_optional_imports(self) -> None:
+        """Native presets need no NeMo/PyTorch installation."""
+        for mode in ("offline", "streaming"):
+            with open_workflow(f"nvidia_cpp_{mode}", prepare=False) as session:
+                step = session.config.steps[0]
+                self.assertEqual(step.backend, "openai_transcription")
+                self.assertEqual(step.model.settings["language"], "es-ES")
+                self.assertIn("q8_0", step.model.name)
+                self.assertEqual(step.model.quantization, "Q8_0")
+                self.assertEqual(len(step.companions["diarization"].sha256), 64)
 
-    def test_missing_companions_and_unknown_modes_fail_before_preparation(self):
-        """Configuration errors never trigger expensive model preparation."""
+    def test_incompatible_contracts_fail_before_preparation(self) -> None:
+        """Missing companions, unsupported modes and formats fail before downloads."""
         config = load_workflow("nvidia_cpp_offline")
         step = config.steps[0]
         for invalid in (
             replace(step, companions={}),
-            replace(step, model=replace(step.model, settings={"mode": "oops"})),
-            replace(step, model=replace(step.model, settings={"max_speakers": True})),
+            replace(
+                step,
+                model=replace(
+                    step.model, settings=step.model.settings | {"mode": "oops"}
+                ),
+            ),
+            replace(step, model=replace(step.model, filename="model.nemo")),
         ):
             with self.assertRaises(ValueError):
                 open_workflow(replace(config, steps=(invalid,)), prepare=False)
 
-    def test_word_attribution_preserves_unknown_labels_and_turns(self):
-        """Zero native tags stay unknown and speaker changes split adjacent words."""
+    def test_word_attribution_preserves_unknown_labels(self) -> None:
+        """Native zero is unknown; labels never become clinical roles."""
         payload = {
             "text": "Hola doctor sí",
             "words": [
@@ -62,36 +62,55 @@ class NvidiaContractTests(unittest.TestCase):
                 {"word": "sí", "start": 0.7, "end": 0.9, "speaker": 2},
             ],
         }
-        result = parse_speech(payload, duration_seconds=1, diarized=True)
+        result = parse_words(payload, duration_seconds=1, diarized=True)
         self.assertEqual([s.speaker for s in result.segments], [None, "1", "2"])
-        plain = parse_speech(payload, duration_seconds=1, diarized=False)
+        plain = parse_words(payload, duration_seconds=1, diarized=False)
         self.assertIsInstance(plain, Transcript)
         self.assertEqual(plain, result.without_speakers())
-        payload["words"][0]["end"] = 4
-        with self.assertRaises(ValueError):
-            parse_speech(payload, duration_seconds=1, diarized=True)
 
-    def test_seglst_overlap_and_zero_based_speakers_are_preserved(self):
-        """Concurrent speakers remain separate even when their words overlap."""
-        rows = [
-            {"words": "Dos", "speaker": 1, "start_time": 0.2, "end_time": 0.8},
-            {"words": "Uno", "speaker": 0, "start_time": 0.1, "end_time": 0.9},
-        ]
-        result = parse_speech(rows, duration_seconds=1, diarized=True)
-        self.assertEqual([s.speaker for s in result.segments], ["0", "1"])
-        self.assertLess(result.segments[1].start, result.segments[0].end)
+    def test_moss_segments_preserve_labels_and_unknown_values(self) -> None:
+        """Interpret the service schema without importing a MOSS model library."""
+        payload = {
+            "segments": [
+                {"start": 0, "end": 1, "text": "[S01] Hola"},
+                {"start": 0.5, "end": 1.2, "text": "Sí"},
+            ]
+        }
+        result = parse_segments(payload, duration_seconds=2, diarized=True)
+        self.assertEqual([s.speaker for s in result.segments], ["S01", None])
+        self.assertEqual(result.segments[0].text, "Hola")
 
-    def test_offline_attribution_does_not_invent_speakers_for_ties_or_silence(self):
-        """Only a unique positive overlap produces a speaker identity."""
-        words = [{"word": "sí", "start": 1, "end": 2}]
-        self.assertIsNone(attribute_words(words, ["0 1 A"])[0]["speaker"])
-        self.assertIsNone(attribute_words(words, ["1 2 A", "1 2 B"])[0]["speaker"])
-        self.assertEqual(
-            attribute_words(words, ["1 2 speaker_0"])[0]["speaker"], "speaker_0"
-        )
+    def test_external_moss_uses_shared_http_without_local_model_assets(self) -> None:
+        """An existing service requires no local weights, Torch or SGLang install."""
+        step = load_workflow("moss_bonsai_sglang").steps[0]
+        model = step.model.settings["served_model"]
+        payload = {
+            "text": "Hola",
+            "segments": [{"start": 0, "end": 0.5, "text": "[S01] Hola"}],
+        }
+        with (
+            tempfile.TemporaryDirectory() as temporary,
+            transcription_server(payload, models=(model,)) as (url, requests),
+        ):
+            root = Path(temporary)
+            runtime = replace(step.runtime, settings={"base_url": url})
+            step = replace(step, runtime=runtime)
+            with patch("scribnic.downloads.download_file") as download:
+                prepared = ResourceManager(cache=root, download=False).prepare(step)
+                download.assert_not_called()
+            backend = OpenAITranscription(step, prepared)
+            try:
+                result = backend.run(write_audio(root))
+                self.assertEqual(backend.process_ids(), ())
+            finally:
+                backend.close()
+            self.assertEqual(result.artifact.segments[0].speaker, "S01")
+            self.assertEqual(requests[0][1]["model"], model)
+            self.assertEqual(requests[0][1]["max_new_tokens"], "16384")
+            self.assertNotIn("beam_size", requests[0][1])
 
-    def test_native_archive_preparation_verifies_and_installs_without_binary_path(self):
-        """A fresh cache receives the pinned release; offline reuse needs no installer."""
+    def test_pinned_archive_is_installed_and_reusable_offline(self) -> None:
+        """A fresh cache receives the pinned archive without a manual binary path."""
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             archive = root / "release.tar.gz"
@@ -114,161 +133,67 @@ class NvidiaContractTests(unittest.TestCase):
                 self.assertEqual(prepare_binary(runtime, root / "cache", False), binary)
 
 
-class NvidiaNativeLifecycleTests(unittest.TestCase):
-    """Exercise CLI ownership, output persistence, and profile coverage boundaries."""
+class NvidiaServiceTests(unittest.TestCase):
+    """Exercise persistent service commands and the shared HTTP client."""
 
-    def test_native_run_routes_streaming_and_keeps_diagnostics_inside_the_run(self):
-        """An ordinary run gets raw output, native coverage, and an attributed artifact."""
+    def test_server_loads_both_models_without_a_recording_argument(self) -> None:
+        """The service owns weights; recordings belong to subsequent requests."""
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             step = load_workflow("nvidia_cpp_streaming").steps[0]
-            binary = root / "binary"
-            binary.write_bytes(b"binary")
-            model = root / "model"
-            model.write_bytes(b"weights")
-            prepared = PreparedStep(
-                root, model, binary, companions={"diarization": model}
+            prepared = prepared_files(root)
+            prepared = replace(
+                prepared, companions={"diarization": prepared.model_path}
             )
-            backend = NemoCPP(step, prepared)
-            child = Mock(pid=456)
-            child.poll.return_value = None
+            server = NemoServer(step.runtime, prepared)
+            command = server._command(1234)
+            self.assertEqual(command[1], "serve")
+            self.assertIn("--asr-model", command)
+            self.assertIn("--diar-model", command)
+            self.assertNotIn("transcribe", command)
+            self.assertIn("--asr.batching.enabled=false", command)
+            self.assertEqual(server.health_path, "/ready")
 
-            def wait(**kwargs):
-                """Simulate a child completing its file response while PID sampling is active."""
-                self.assertEqual(backend.process_ids(), (456,))
-                child.poll.return_value = 0
-                return 0
-
-            def popen(command, **kwargs):
-                """Write the response the native CLI owns, using its real command arguments."""
-                self.assertIn("--stream", command)
-                self.assertIn(str(model), command)
-                destination = Path(command[command.index("--output") + 1])
-                destination.write_text(
-                    json.dumps(
-                        {
-                            "text": "Hola",
-                            "words": [
-                                {"word": "Hola", "start": 0, "end": 0.5, "speaker": 1}
-                            ],
-                        }
-                    )
-                )
-                child.wait.side_effect = wait
-                return child
-
-            with (
-                artifact_directory(root / "run"),
-                profile_directory(root / "run/profiles"),
-                patch("scribnic.backends.nemo_cpp.subprocess.Popen", side_effect=popen),
-            ):
-                result = backend.run(AudioFile(root / "audio.wav", 16000, 1))
-            self.assertIsInstance(result.artifact, DiarizedTranscript)
-            self.assertTrue(
-                Path(result.metadata["native_output_path"]).is_relative_to(root / "run")
-            )
-            coverage = json.loads(
-                Path(result.metadata["profile"]["summary_path"]).read_text()
-            )
-            self.assertEqual(coverage["status"], "operator_capture_unavailable")
-            self.assertFalse(backend.process_ids())
-
-    def test_timeout_terminates_only_the_owned_process(self):
-        """Timeouts leave no live native child behind."""
-        with tempfile.TemporaryDirectory() as temporary:
+    def test_requests_reuse_service_and_preserve_diagnostics_and_strategy(self) -> None:
+        """Separate requests retain their predictions and use one loaded service."""
+        step = load_workflow("nvidia_cpp_offline").steps[0]
+        payload = {
+            "text": "Hola",
+            "words": [{"word": "Hola", "start": 0, "end": 0.5, "speaker": 1}],
+        }
+        with (
+            tempfile.TemporaryDirectory() as temporary,
+            transcription_server(payload) as (url, requests),
+        ):
             root = Path(temporary)
-            step = load_workflow("nvidia_cpp_offline").steps[0]
-            model = root / "model"
-            model.write_bytes(b"weights")
-            backend = NemoCPP(
-                step,
-                PreparedStep(root, model, model, companions={"diarization": model}),
-            )
-            child = Mock(pid=456)
-            child.poll.return_value = None
-            child.wait.side_effect = [subprocess.TimeoutExpired("native", 1), 0]
+            service = FakeServer(url)
             with patch(
-                "scribnic.backends.nemo_cpp.subprocess.Popen", return_value=child
+                "scribnic.backends.connection.create_runtime", return_value=service
             ):
-                with self.assertRaises(subprocess.TimeoutExpired):
-                    backend.run(AudioFile(root / "audio.wav", 16000, 1))
-            child.terminate.assert_called_once()
-
-
-@unittest.skipUnless(
-    importlib.util.find_spec("torch"), "optional Torch extra not installed"
-)
-class NvidiaPythonProfilingTests(unittest.TestCase):
-    """Use tiny Torch models to verify the full Python adapter's reporting boundary."""
-
-    def test_offline_profile_exports_traces_and_reuses_weights_without_state_leakage(
-        self,
-    ):
-        """Each invocation profiles its own forwards and persists a separate raw result."""
-        import torch
-
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            model = root / "model"
-            model.write_bytes(b"weights")
-            step = load_workflow("nvidia_nemo_offline").steps[0]
-            backend = NemoSpeech(
-                step, PreparedStep(root, model, companions={"diarization": model})
+                prepared = prepared_files(root)
+                prepared = replace(
+                    prepared, companions={"diarization": prepared.model_path}
+                )
+                backend = OpenAITranscription(step, prepared)
+                try:
+                    with artifact_directory(root / "run"):
+                        first = backend.run(write_audio(root))
+                        second = backend.run(write_audio(root))
+                finally:
+                    backend.close()
+            self.assertEqual(service.starts, 1)
+            self.assertEqual(second.metadata["load_seconds"], 0)
+            self.assertEqual(
+                first.metadata["speaker_attribution_strategy"], "word_time_alignment"
             )
-            encoder = torch.nn.Linear(2, 2)
-            with wave.open(str(root / "audio.wav"), "wb") as audio:
-                audio.setparams((1, 2, 16000, 0, "NONE", "not compressed"))
-                audio.writeframes(b"\x00\x00" * 16000)
-
-            def transcribe(*args, **kwargs):
-                """Produce a real operator and one timestamped word."""
-                self.assertEqual(kwargs["target_lang"], "es-ES")
-                self.assertIsInstance(args[0][0], torch.Tensor)
-                encoder(torch.ones(1, 2))
-                return [
-                    SimpleNamespace(
-                        text="Hola",
-                        timestamp={"word": [{"word": "Hola", "start": 0, "end": 0.5}]},
-                    )
-                ]
-
-            backend.torch = torch
-            backend.device = torch.device("cpu")
-            backend.asr = SimpleNamespace(
-                transcribe=transcribe,
-                encoder=encoder,
-                parameters=lambda: iter(encoder.parameters()),
+            self.assertEqual(requests[0][1]["diarization"], "true")
+            self.assertNotEqual(
+                first.metadata["native_output_path"],
+                second.metadata["native_output_path"],
             )
-            backend.diarizer = SimpleNamespace(
-                encoder=None, diarize=lambda *args, **kwargs: [["0 0.8 speaker_0"]]
+            self.assertTrue(
+                Path(first.metadata["native_output_path"]).is_relative_to(root / "run")
             )
-            previous_threads = torch.get_num_threads()
-            with (
-                patch.object(backend, "_load", return_value=0),
-                patch(
-                    "scribnic.backends.nemo.importlib.metadata.version",
-                    return_value="test",
-                ),
-            ):
-                for index in range(2):
-                    directory = root / str(index)
-                    with (
-                        artifact_directory(directory),
-                        profile_directory(directory / "profiles"),
-                    ):
-                        result = backend.run(AudioFile(root / "audio.wav", 16000, 1))
-                    self.assertEqual(result.artifact.segments[0].speaker, "speaker_0")
-                    summary = json.loads(
-                        Path(result.metadata["profile"]["summary_path"]).read_text()
-                    )
-                    self.assertEqual(summary["status"], "success")
-                    self.assertTrue(summary["traces"])
-                    self.assertIn(
-                        "nvidia.asr.encoder", {row["name"] for row in summary["phases"]}
-                    )
-            self.assertEqual(torch.get_num_threads(), previous_threads)
-            self.assertFalse(encoder._forward_hooks)
-            self.assertFalse(encoder._forward_pre_hooks)
 
 
 if __name__ == "__main__":
