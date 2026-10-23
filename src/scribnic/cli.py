@@ -1,95 +1,138 @@
-"""Run a configured local scribe workflow or prepare its cached resources."""
+"""Typer commands delegate execution to the public API and presentation to Rich."""
 
-import argparse
 import json
 import sys
 from contextlib import redirect_stdout
+from enum import Enum
 from pathlib import Path
+from typing import Annotated
+
+import typer
 
 from .application import execute, new_run_directory, setup_workflow
-from .artifacts import ARTIFACT_KINDS
-from .reporting import print_result
+from .config import artifact_kind
 from .storage import result_to_dict
+from .terminal import TerminalView, present_result
 from .workflow import WorkflowRunError
 
-
-def _parser() -> argparse.ArgumentParser:
-    """Declare file execution and resource setup without embedding workflow logic."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    commands = parser.add_subparsers(dest="command", required=True)
-    run = commands.add_parser("run", help="Generate a note or an intermediate artifact")
-    run.add_argument("input", type=Path, help="WAV, transcript JSON, or plain text")
-    run.add_argument(
-        "--workflow", required=True, help="Preset name, TOML file, or directory"
-    )
-    run.add_argument(
-        "--output", choices=ARTIFACT_KINDS, help="Default: workflow's note output"
-    )
-    run.add_argument(
-        "--output-dir", type=Path, help="Empty directory; default: runs/<timestamp>"
-    )
-    run.add_argument("--format", choices=("pretty", "json"), default="pretty")
-    run.add_argument(
-        "--offline", action="store_true", help="Require already cached resources"
-    )
-    run.add_argument(
-        "--profile",
-        action="store_true",
-        help="Save optional runtime profiles and coverage",
-    )
-    setup = commands.add_parser(
-        "setup", aliases=["prepare"], help="Download/check selected workflow assets"
-    )
-    setup.add_argument("--workflow", required=True)
-    setup.add_argument("--offline", action="store_true")
-    return parser
+app = typer.Typer(
+    help="Run a local clinical note workflow or prepare its cached resources.",
+    add_completion=False,
+    no_args_is_help=True,
+    pretty_exceptions_enable=False,
+)
 
 
-def _run(args: argparse.Namespace) -> None:
-    """Invoke the saved-run API and present its note, JSON or error context."""
-    directory = (args.output_dir or new_run_directory()).expanduser().resolve()
-    print(f"\nSCRIBNIC · {args.workflow}\nResultados: {directory}", file=sys.stderr)
-    with redirect_stdout(sys.stderr):
-        result = execute(
-            args.workflow,
-            args.input,
-            directory,
-            output=args.output,
-            offline=args.offline,
-            profile=args.profile,
-            progress=sys.stderr,
+class OutputKind(str, Enum):
+    """Expose supported artifact choices without implementing workflow routing."""
+
+    audio = "audio"
+    transcript = "transcript"
+    diarized_transcript = "diarized_transcript"
+    note = "note"
+
+
+class OutputFormat(str, Enum):
+    """Choose human-readable presentation or a single machine-readable document."""
+
+    pretty = "pretty"
+    json = "json"
+
+
+@app.command("run")
+def run_command(
+    input_path: Annotated[
+        Path, typer.Argument(help="WAV, transcript JSON, or plain text")
+    ],
+    *,
+    workflow: Annotated[str, typer.Option(help="Preset name, TOML file, or directory")],
+    output: Annotated[
+        OutputKind | None, typer.Option(help="Requested artifact")
+    ] = None,
+    output_dir: Annotated[
+        Path | None, typer.Option(help="Empty results directory")
+    ] = None,
+    output_format: Annotated[
+        OutputFormat, typer.Option("--format")
+    ] = OutputFormat.pretty,
+    offline: Annotated[
+        bool, typer.Option("--offline", help="Require cached resources")
+    ] = False,
+    profile: Annotated[
+        bool, typer.Option("--profile", help="Save optional runtime profiles")
+    ] = False,
+    verbose: Annotated[
+        bool, typer.Option("--verbose", "-v", help="Show diagnostics")
+    ] = False,
+) -> None:
+    """Generate a note or stop at a configured intermediate artifact."""
+    directory = (output_dir or new_run_directory()).expanduser().resolve()
+    view = TerminalView(sys.stderr, verbose=verbose)
+    try:
+        with view, redirect_stdout(sys.stderr):
+            view.header(workflow, destination=str(directory))
+            result = execute(
+                workflow,
+                input_path,
+                directory,
+                output=artifact_kind(output.value) if output is not None else None,
+                offline=offline,
+                profile=profile,
+            )
+        if output_format == OutputFormat.json:
+            print(json.dumps(result_to_dict(result), ensure_ascii=False))
+        else:
+            present_result(result, sys.stdout)
+        view.summary(result)
+        view.console.print(f"Informe: {directory / 'report.html'}", markup=False)
+    except WorkflowRunError as error:
+        view.error(f"Error: {error}")
+        view.console.print(
+            "Los artefactos completados se conservan en el directorio de resultados."
         )
-    if args.format == "json":
-        print(json.dumps(result_to_dict(result), ensure_ascii=False))
-    else:
-        print_result(result, sys.stdout)
-    print(f"Informe: {directory / 'report.html'}", file=sys.stderr)
+        raise typer.Exit(1) from error
+    except (ValueError, OSError, RuntimeError, ImportError) as error:
+        view.error(f"Error: {error}")
+        raise typer.Exit(1) from error
+    except KeyboardInterrupt:
+        view.error("Ejecución interrumpida.")
+        raise typer.Exit(130) from None
+
+
+@app.command("prepare", hidden=True)
+@app.command("setup")
+def setup_command(
+    *,
+    workflow: Annotated[str, typer.Option(help="Preset name, TOML file, or directory")],
+    offline: Annotated[
+        bool, typer.Option("--offline", help="Require cached resources")
+    ] = False,
+    verbose: Annotated[
+        bool, typer.Option("--verbose", "-v", help="Show diagnostics")
+    ] = False,
+) -> None:
+    """Download and verify workflow assets without loading models or starting servers."""
+    view = TerminalView(sys.stderr, verbose=verbose)
+    try:
+        with view, redirect_stdout(sys.stderr):
+            view.header(workflow)
+            setup_workflow(workflow, offline=offline)
+        print("Recursos preparados. Los modelos se cargarán al ejecutar el workflow.")
+    except (ValueError, OSError, RuntimeError, ImportError) as error:
+        view.error(f"Error: {error}")
+        raise typer.Exit(1) from error
+    except KeyboardInterrupt:
+        view.error("Preparación interrumpida.")
+        raise typer.Exit(130) from None
 
 
 def main(argv: list[str] | None = None) -> None:
-    """Parse the CLI, invoke the public application layer and report failures."""
-    args = _parser().parse_args(argv)
+    """Invoke Typer while preserving normal return on success for Python callers."""
     try:
-        if args.command in {"setup", "prepare"}:
-            setup_workflow(args.workflow, offline=args.offline)
-            print(
-                "Recursos preparados. Los modelos se cargarán al ejecutar el workflow."
-            )
-            return
-        _run(args)
-    except WorkflowRunError as error:
-        print(f"Error: {error}", file=sys.stderr)
-        print(
-            "Los artefactos completados se conservan en el directorio de resultados.",
-            file=sys.stderr,
-        )
-        raise SystemExit(1) from error
-    except (ValueError, OSError, RuntimeError, ImportError) as error:
-        print(f"Error: {error}", file=sys.stderr)
-        raise SystemExit(1) from error
-    except KeyboardInterrupt:
-        print("Ejecución interrumpida.", file=sys.stderr)
-        raise SystemExit(130) from None
+        app(args=argv, prog_name="scribnic")
+    except SystemExit as error:
+        if error.code not in (None, 0):
+            raise
 
 
 if __name__ == "__main__":

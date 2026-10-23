@@ -22,6 +22,7 @@ from .config import StepConfig, WorkflowConfig, artifact_kind, load_workflow
 from .observability import trace_id, tracer
 from .planning import PlannedStep, resolve_plan, validate_workflow
 from .profiling import profile_directory
+from .progress import phase
 from .resources import ResourceMonitor
 
 if TYPE_CHECKING:
@@ -250,7 +251,8 @@ class WorkflowSession:
         state.resources = monitor.summary()
         result = state.snapshot("success")
         if store is not None:
-            store.save(result)
+            with phase("Guardar resultados e informe"):
+                store.save(result)
         return result
 
     @staticmethod
@@ -282,6 +284,7 @@ class WorkflowSession:
             attributes = {
                 "scribnic.step.name": planned.step.name,
                 "scribnic.model.name": planned.step.model.name,
+                "scribnic.output.kind": planned.step.model.output,
                 "scribnic.runtime.engine": planned.step.runtime.engine,
             }
             started = perf_counter()

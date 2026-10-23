@@ -200,6 +200,36 @@ los informes individuales no representan por sí solos el consumo total concurre
 
 ## Configuración y CLI
 
+La CLI usa Typer y Rich, declarados en la instalación base; no necesita instalar
+MOSS para disponer de colores y progreso. Importar la API de Python no importa
+Typer, Rich ni Torch.
+
+En una terminal muestra las fases que realmente ejecuta el workflow, spinners y
+tiempo transcurrido, carga de servicios, verificación de caché y guardado del
+informe. Las descargas nativas muestran bytes y velocidad; aparece una barra solo
+cuando el servidor informa su tamaño. La inferencia por HTTP no ofrece un
+porcentaje fiable y se presenta con un spinner. No interpretamos el presupuesto
+de tokens como un total de trabajo. La exportación de trazas Torch tiene su fase.
+
+El progreso y los avisos van a `stderr`; `--format json` mantiene un único documento
+JSON en `stdout`. Al redirigir la salida de progreso se imprimen líneas estables,
+sin animaciones ni ANSI. `NO_COLOR` desactiva los colores. `--verbose` / `-v` muestra
+los diagnósticos de Scribnic; los logs de servidores y la telemetría siguen en el
+informe/directorio del run. Los avisos accionables siguen visibles sin verbose.
+`Ctrl+C` cierra la sesión y los servidores propios, y conserva el código de salida
+130 y los artefactos ya guardados.
+
+```bash
+uv run scribnic run consulta.wav --workflow whisper_bonsai
+uv run scribnic run consulta.wav --workflow whisper_bonsai --format json > result.json
+uv run scribnic setup --workflow nvidia_cpp_offline --verbose
+```
+
+La presentación vive en `terminal.py`. Las señales opcionales de `progress.py`
+quedan limitadas al contexto del llamante; el core no importa librerías de UI.
+Los spans de OpenTelemetry existentes proporcionan fases de ejecución y carga,
+sin leer ni sondear archivos de telemetría para actualizar la terminal.
+
 Un paso selecciona su **backend**, modelo y runtime de forma explícita:
 
 ```toml

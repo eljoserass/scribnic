@@ -11,6 +11,8 @@ dependencies = [
     "opentelemetry-exporter-otlp-json-file==0.66b1",
     "opentelemetry-instrumentation-system-metrics==0.66b1",
     "psutil>=7,<8",
+    "typer>=0.27,<0.28",
+    "rich>=15,<16",
 ]
 
 [project.optional-dependencies]

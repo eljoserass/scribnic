@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .config import ModelAsset, ModelConfig, RuntimeConfig, StepConfig
+from .progress import ProgressTask, phase
 
 
 def cache_directory() -> Path:
@@ -33,8 +34,12 @@ def sha256_file(path: Path) -> str:
 
 
 def download_file(url: str, path: Path, checksum: str, *, allowed: bool) -> Path:
-    if path.is_file() and sha256_file(path) == checksum:
-        return path
+    """Download atomically, reporting verified cache reuse and actual transferred bytes."""
+    if path.is_file():
+        with phase("Verificar caché", detail=path.name):
+            valid = sha256_file(path) == checksum
+        if valid:
+            return path
     if not allowed:
         raise ValueError(f"Missing or invalid cached asset: {path}. Enable downloads.")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -43,11 +48,32 @@ def download_file(url: str, path: Path, checksum: str, *, allowed: bool) -> Path
         with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as output:
             temporary = Path(output.name)
             with urllib.request.urlopen(url, timeout=60) as response:
-                while chunk := response.read(1024 * 1024):
-                    output.write(chunk)
-        if sha256_file(temporary) != checksum:
-            raise ValueError(f"Downloaded asset checksum does not match: {path.name}")
-        temporary.replace(path)
+                size = response.headers.get("Content-Length")
+                total = int(size) if size and size.isdigit() else None
+                progress = ProgressTask(
+                    "Descargar", detail=path.name, total=total, unit="bytes"
+                )
+                try:
+                    transferred = 0
+                    while chunk := response.read(1024 * 1024):
+                        output.write(chunk)
+                        transferred += len(chunk)
+                        progress.update(transferred)
+                except BaseException as error:
+                    progress.finish(
+                        "interrupted"
+                        if isinstance(error, KeyboardInterrupt)
+                        else "error"
+                    )
+                    raise
+                else:
+                    progress.finish()
+        with phase("Verificar descarga", detail=path.name):
+            if sha256_file(temporary) != checksum:
+                raise ValueError(
+                    f"Downloaded asset checksum does not match: {path.name}"
+                )
+            temporary.replace(path)
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
@@ -96,9 +122,11 @@ def prepare_binary(runtime: RuntimeConfig, cache: Path, download: bool) -> Path:
         return binary
     archive = directory / Path(asset["url"]).name
     download_file(asset["url"], archive, asset["sha256"], allowed=download)
-    _extract_archive(archive, directory)
+    with phase("Descomprimir runtime", detail=runtime.name):
+        _extract_archive(archive, directory)
     if runtime.settings.get("build_target"):
-        _build_runtime(runtime, directory, download=download)
+        with phase("Compilar runtime", detail=runtime.name):
+            _build_runtime(runtime, directory, download=download)
     if not binary.is_file():
         raise ValueError(f"Runtime archive did not contain {asset['binary']}.")
     return binary
@@ -205,7 +233,8 @@ def prepare_model(
 ) -> Path | None:
     """Prepare the format selected explicitly by a model/runtime configuration."""
     if runtime.engine == "transformers":
-        return _prepare_snapshot(model, download)
+        with phase("Preparar modelo", detail=model.name):
+            return _prepare_snapshot(model, download)
     if runtime.engine not in {"llama_cpp", "whisper_cpp", "nemo_cpp"}:
         return None
     if not all((model.repository, model.revision, model.filename, model.sha256)):
@@ -259,18 +288,21 @@ class ResourceManager:
     def prepare(self, step: StepConfig) -> PreparedStep:
         """Download versioned weights, companions, and native runtimes as needed."""
         if step.name not in self._prepared:
-            model = prepare_model(step.model, step.runtime, self.cache, self.download)
-            binary = None
-            if step.runtime.engine in {"llama_cpp", "whisper_cpp", "nemo_cpp"}:
-                binary = prepare_binary(step.runtime, self.cache, self.download)
-            vad = prepare_vad(step, self.cache, self.download)
-            companions = {
-                role: prepare_model(asset, step.runtime, self.cache, self.download)
-                for role, asset in step.companions.items()
-            }
-            self._prepared[step.name] = PreparedStep(
-                self.cache, model, binary, vad, companions
-            )
+            with phase("Preparar recursos", detail=step.model.name):
+                model = prepare_model(
+                    step.model, step.runtime, self.cache, self.download
+                )
+                binary = None
+                if step.runtime.engine in {"llama_cpp", "whisper_cpp", "nemo_cpp"}:
+                    binary = prepare_binary(step.runtime, self.cache, self.download)
+                vad = prepare_vad(step, self.cache, self.download)
+                companions = {
+                    role: prepare_model(asset, step.runtime, self.cache, self.download)
+                    for role, asset in step.companions.items()
+                }
+                self._prepared[step.name] = PreparedStep(
+                    self.cache, model, binary, vad, companions
+                )
         return self._prepared[step.name]
 
 

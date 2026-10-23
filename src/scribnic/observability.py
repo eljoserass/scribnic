@@ -3,6 +3,7 @@
 import logging
 import os
 import platform
+import sys
 from contextlib import ExitStack
 from contextvars import ContextVar
 from pathlib import Path
@@ -11,7 +12,13 @@ from typing import TYPE_CHECKING, TextIO
 
 from opentelemetry import metrics, trace
 
+from .progress import ProgressTask, current_observer
+
 if TYPE_CHECKING:
+    from opentelemetry.context import Context
+    from opentelemetry.sdk.resources import Resource
+    from opentelemetry.sdk.trace import ReadableSpan, Span, SpanProcessor
+
     from .config import StepConfig
 
 _providers: ContextVar[tuple | None] = ContextVar(
@@ -76,17 +83,60 @@ class GenerationProgress:
         }
 
 
-def _progress_processor(stream: TextIO):
+def _progress_processor(stream: TextIO | None) -> "SpanProcessor":
+    """Reuse execution spans for optional UI notifications and legacy text output."""
     from opentelemetry.sdk.trace import SpanProcessor
 
     class ProgressProcessor(SpanProcessor):
-        def on_start(self, span, parent_context=None):
-            if span.name == "scribnic.step.run":
+        """Retain only active span/task pairs for the lifetime of one trace provider."""
+
+        def __init__(self) -> None:
+            """Capture the caller's observer before SDK callbacks run."""
+            self.observer = current_observer()
+            self.tasks: dict[int, ProgressTask] = {}
+
+        def on_start(
+            self, span: "Span", parent_context: "Context | None" = None
+        ) -> None:
+            """Notify selected phases without polling or reading exported traces."""
+            label = {
+                "scribnic.step.run": "Ejecutar etapa",
+                "scribnic.service.load": "Cargar servicio",
+                "scribnic.moss.load": "Cargar MOSS",
+            }.get(span.name)
+            if self.observer is not None and label is not None:
+                output = span.attributes.get("scribnic.output.kind")
+                if output is not None:
+                    label = {
+                        "note": "Generar nota",
+                        "transcript": "Transcribir",
+                        "diarized_transcript": "Transcribir y diarizar",
+                    }.get(output, label)
+                detail = span.attributes.get("scribnic.model.name", "")
+                if not detail and span.parent is not None:
+                    parent_task = self.tasks.get(span.parent.span_id)
+                    if parent_task is not None:
+                        detail = parent_task.event.detail
+                self.tasks[span.context.span_id] = ProgressTask(
+                    label, detail=detail, observer=self.observer
+                )
+            if stream is not None and span.name == "scribnic.step.run":
                 name = span.attributes.get("scribnic.step.name", "step")
                 print(f"  … {name}", file=stream, flush=True)
 
-        def on_end(self, span):
-            if span.name == "scribnic.step.run":
+        def on_end(self, span: "ReadableSpan") -> None:
+            """Close matching notifications using the recorded span status."""
+            task = self.tasks.pop(span.context.span_id, None)
+            if task is not None:
+                # OTel does not mark KeyboardInterrupt as an error. The synchronous
+                # callback still runs while that exception unwinds the span.
+                if isinstance(sys.exception(), KeyboardInterrupt):
+                    task.finish("interrupted")
+                elif span.status.status_code.name == "ERROR":
+                    task.finish("error")
+                else:
+                    task.finish()
+            if stream is not None and span.name == "scribnic.step.run":
                 name = span.attributes.get("scribnic.step.name", "step")
                 seconds = (span.end_time - span.start_time) / 1e9
                 mark = "✗" if span.status.status_code.name == "ERROR" else "✓"
@@ -128,7 +178,8 @@ class Telemetry:
         self._token = _providers.set((self._traces, self._metrics))
         return self
 
-    def _configure_traces(self, resource) -> None:
+    def _configure_traces(self, resource: "Resource") -> None:
+        """Export spans locally and notify the caller's optional progress observer."""
         from opentelemetry.exporter.otlp.json.file import FileSpanExporter
         from opentelemetry.sdk.trace import TracerProvider
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -138,7 +189,7 @@ class Telemetry:
         self._traces.add_span_processor(
             BatchSpanProcessor(FileSpanExporter(self.directory / "traces.jsonl"))
         )
-        if self.progress is not None:
+        if self.progress is not None or current_observer() is not None:
             self._traces.add_span_processor(_progress_processor(self.progress))
 
     def _configure_metrics(self, resource) -> None:

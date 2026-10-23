@@ -12,11 +12,13 @@ from time import monotonic
 from types import ModuleType
 from typing import TYPE_CHECKING, Callable, Iterator
 
+from .progress import phase
 from .storage import write_json
 
 if TYPE_CHECKING:
     from torch import device as TorchDevice
     from torch.nn import Module
+    from torch.profiler import profile as TorchProfiler
 
 _directory: ContextVar[Path | None] = ContextVar(
     "scribnic_profile_directory", default=None
@@ -134,37 +136,40 @@ class _ProfileWindows:
             return self.actions.RECORD_AND_SAVE
         return self.actions.RECORD
 
-    def flush(self, profiler) -> None:
+    def flush(self, profiler: "TorchProfiler") -> None:
         """Export one completed window and merge its numeric operator totals."""
-        started = monotonic()
-        name = f"{self.name}-trace-{len(self.traces):04d}.json.gz"
-        logging.getLogger(__name__).info(
-            "Profiling %s · exportando bloque %d", self.name, len(self.traces) + 1
-        )
-        self._export_trace(profiler, self.directory / name)
-        for event in profiler.key_averages():
-            row = self.statistics.setdefault(
-                event.key,
-                {
-                    "name": event.key,
-                    "calls": 0,
-                    "cpu_seconds": 0.0,
-                    "self_cpu_seconds": 0.0,
-                    "self_cpu_memory_net_bytes": 0,
-                    "device_seconds": 0.0,
-                },
+        with phase("Exportar profiling", detail=self.name):
+            started = monotonic()
+            name = f"{self.name}-trace-{len(self.traces):04d}.json.gz"
+            logging.getLogger(__name__).info(
+                "Profiling %s · exportando bloque %d", self.name, len(self.traces) + 1
             )
-            row["calls"] += event.count
-            row["cpu_seconds"] += event.cpu_time_total / 1e6
-            row["self_cpu_seconds"] += event.self_cpu_time_total / 1e6
-            row["self_cpu_memory_net_bytes"] += event.self_cpu_memory_usage
-            row["device_seconds"] += getattr(event, "device_time_total", 0) / 1e6
-        self.traces.append(name)
-        self.export_and_aggregation_seconds += monotonic() - started
-        self.save("running")
-        logging.getLogger(__name__).info(
-            "Profiling %s · bloque guardado · %.1f s", self.name, monotonic() - started
-        )
+            self._export_trace(profiler, self.directory / name)
+            for event in profiler.key_averages():
+                row = self.statistics.setdefault(
+                    event.key,
+                    {
+                        "name": event.key,
+                        "calls": 0,
+                        "cpu_seconds": 0.0,
+                        "self_cpu_seconds": 0.0,
+                        "self_cpu_memory_net_bytes": 0,
+                        "device_seconds": 0.0,
+                    },
+                )
+                row["calls"] += event.count
+                row["cpu_seconds"] += event.cpu_time_total / 1e6
+                row["self_cpu_seconds"] += event.self_cpu_time_total / 1e6
+                row["self_cpu_memory_net_bytes"] += event.self_cpu_memory_usage
+                row["device_seconds"] += getattr(event, "device_time_total", 0) / 1e6
+            self.traces.append(name)
+            self.export_and_aggregation_seconds += monotonic() - started
+            self.save("running")
+            logging.getLogger(__name__).info(
+                "Profiling %s · bloque guardado · %.1f s",
+                self.name,
+                monotonic() - started,
+            )
 
     def _export_trace(self, profiler, destination: Path) -> None:
         """Compress a completed trace without retaining its full JSON in memory."""
