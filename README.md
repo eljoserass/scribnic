@@ -176,6 +176,26 @@ a ejecutarse. `download=False` exige caché. Las llamadas de una sesión se seri
 el harness controla la concurrencia según la memoria disponible. Datasets, jueces,
 perturbaciones y métricas de calidad pertenecen a `scribe_eval`, fuera del núcleo.
 
+Para evaluación paralela, cada worker puede mantener su propio proceso Python y
+una `WorkflowSession` residente. Las sesiones comparten la caché en disco, pero
+cada una arranca sus servidores propios bajo demanda, con PIDs y puertos distintos
+si no se fija un puerto. Sus estados de inferencia y artefactos permanecen separados;
+la RAM necesaria aumenta con las réplicas. Cada muestra necesita su directorio de
+resultados. Una sola sesión serializa sus llamadas, incluso desde varios hilos.
+
+Si varios workers configuran la misma URL externa, comparten el servidor: crear
+clientes no crea réplicas del modelo. El harness deberá limitar peticiones en vuelo
+y distinguir latencia por consulta de throughput total. Actualmente Bonsai se
+lanza con un slot y NVIDIA con batching desactivado; los gestores propios no
+configuran un servicio compartido para alta concurrencia.
+
+Preparar primero los workflows con `setup`, y después abrir workers con
+`download=False`, evita instalaciones concurrentes: la extracción y compilación de
+runtimes todavía no tienen bloqueo entre procesos. No hay un pool ni reparto
+automático de CPU/RAM en Scribnic; el harness debe fijar workers e hilos por runtime.
+Para esos experimentos conviene registrar también recursos de la máquina completa:
+los informes individuales no representan por sí solos el consumo total concurrente.
+
 ## Configuración y CLI
 
 Un paso selecciona su **backend**, modelo y runtime de forma explícita:
