@@ -5,6 +5,75 @@ una nota. La misma API sirve para Python, CLI y un futuro evaluador o servidor.
 Actualmente incluye MOSS-Transcribe-Diarize, Whisper.cpp, Nemotron multilingüe con
 diarización mediante NeMo/PyTorch o NeMo-Speech.cpp, y Bonsai mediante HTTP.
 
+## Arquitectura del refactor
+
+El workflow selecciona los pasos y sus recursos. Un **modelo** identifica los pesos
+y su precisión; un **backend** adapta una API de inferencia a los artefactos de
+Scribnic; un **gestor de runtime** instala o localiza el motor, arranca el proceso,
+espera a que esté listo y lo cierra. El motor real puede ser un ejecutable C++ o un
+servicio existente. Compartir HTTP no implica compartir formatos ni capacidades.
+
+Este es el objetivo del refactor en curso:
+
+```mermaid
+flowchart TB
+    subgraph callers["Entradas: mismo núcleo"]
+        CLI["CLI · cli.py"]
+        APP["Aplicación / plugin"]
+        EVAL["scribe_eval · repositorio externo"]
+    end
+    CLI --> CORE
+    APP --> CORE
+    EVAL --> CORE
+
+    CORE["WorkflowSession · workflow.py<br/>Resuelve productores y aísla cada ejecución"]
+    CONFIG["Workflow TOML<br/>Modelo + variante de pesos + runtime<br/>Backend + parámetros + template"] --> CORE
+
+    subgraph execution["Ejecución y artefactos"]
+        AUDIO["Audio WAV"] --> SPEECH["backends/openai_transcription.py<br/>Carga WAV y adapta parámetros / respuesta"]
+        SPEECH --> TRANSCRIPT["Transcript o DiarizedTranscript<br/>artifacts.py · datos guardables y reutilizables"]
+        TRANSCRIPT --> NOTE["backends/openai_chat.py<br/>Template SOAP + conversación"]
+        NOTE --> OUTPUT["Note"]
+    end
+    CORE --> SPEECH
+    CORE --> NOTE
+    SUPPLIED["Transcripción suministrada<br/>También permite perturbaciones del evaluador"] --> TRANSCRIPT
+
+    subgraph services["Motores de inferencia seleccionados"]
+        WS["whisper-server<br/>Whisper multilingüe Q8_0"]
+        NS["nemo-speech serve<br/>Nemotron ASR + diarizador Q8_0"]
+        MS["Servicio MOSS existente<br/>SGLang Omni · plataforma compatible"]
+        LS["llama-server · distribución Prism<br/>Bonsai PQ2_0"]
+    end
+    SPEECH <-->|"API de transcripción"| WS
+    SPEECH <-->|"HTTP / protocolo streaming específico"| NS
+    SPEECH <-->|"API de transcripción"| MS
+    NOTE <-->|"Chat Completions"| LS
+
+    MANAGERS["runtimes/<br/>Ciclo de vida común + comandos por motor<br/>Solo administra procesos propios"]
+    CORE --> MANAGERS
+    MANAGERS -. "arranque / disponibilidad / cierre" .-> WS
+    MANAGERS -. "arranque / disponibilidad / cierre" .-> NS
+    MANAGERS -. "arranque / disponibilidad / cierre" .-> LS
+
+    CORE -. "spans y métricas" .-> OBS["observability.py / resources.py<br/>OpenTelemetry · CPU / RSS por proceso"]
+    MANAGERS -. "PID, versión y logs" .-> OBS
+    CORE --> STORE["storage.py / reporting.py<br/>Predicciones, procedencia e informe local"]
+```
+
+El despliegue del médico incluye las dependencias, pesos y motores necesarios para
+su workflow. El código puede conocer otros proveedores sin importar ni instalar
+sus bibliotecas. El entorno de evaluación puede preparar varios workflows; los
+datasets y métricas permanecen fuera de Scribnic. Un servicio externo ya instalado
+no se descarga ni se termina desde el cliente.
+
+El ciclo de vida previsto es `setup → start → run → close`: preparar recursos en
+disco, cargar los pasos seleccionados, reutilizarlos entre consultas y liberar los
+procesos propios. La carga y el warmup se miden por separado de la inferencia. Los
+artefactos y caches de una grabación nunca se reutilizan como estado de otra.
+SGLang Omni para MOSS requiere validar la combinación concreta de modelo y
+plataforma; no se promete soporte local de MOSS en AMD o Mac por usar HTTP.
+
 ## Instalar y ejecutar
 
 Python 3.12 o posterior y [uv](https://docs.astral.sh/uv/). Desde este repositorio:

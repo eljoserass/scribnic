@@ -104,6 +104,20 @@ def real_time_factor(
 
 ## Functions, classes, and module boundaries
 
+- Give every new or modified class a docstring stating its responsibility,
+  owned resources, and lifetime. Document behavior rather than repeating names.
+- A backend adapts an inference protocol to Scribnic artifacts. A runtime manager
+  prepares/starts/checks/stops an inference service; it does not format prompts or
+  parse clinical artifacts. Model presets identify weights and their precision.
+- Share protocol clients where contracts match. Keep provider-specific parameters,
+  response conversion, and streaming protocols explicit; HTTP compatibility does
+  not establish diarization, timestamp, or streaming capabilities.
+- Client installation includes only dependencies and assets of the selected
+  workflow. Additional provider modules must remain importable without loading
+  their optional libraries. External endpoints are not owned local processes.
+- Identify model variants with their actual weight format/quantization, record
+  effective compute dtype separately, and keep runtime distribution/version pins.
+
 - Use dataclasses for configuration and artifacts. Prefer immutable artifacts;
   create explicit copies for transformations.
 - Use classes for stateful resources such as loaded models, runtime sessions,
