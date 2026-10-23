@@ -141,6 +141,7 @@ class MossTranscribeDiarize:
         ).to(self.device)
 
     def run(self, source: Artifact) -> StepOutput:
+        """Load MOSS lazily, then recognize audio with separately timed inference."""
         if not isinstance(source, AudioFile) or source.duration is None:
             raise ValueError("MOSS needs a validated WAV audio artifact.")
         with tracer().start_as_current_span("scribnic.moss.load"):
@@ -148,7 +149,10 @@ class MossTranscribeDiarize:
         if self.device.type == "cuda":
             self.torch.cuda.reset_peak_memory_stats(self.device)
         include_gpu = self.step.runtime.settings.get("profile_gpu", False)
-        with self._cpu_threads() as threads:
+        with (
+            tracer().start_as_current_span("scribnic.moss.inference"),
+            self._cpu_threads() as threads,
+        ):
             self._describe_runtime(source, threads)
             with torch_profile(
                 self.model,

@@ -14,6 +14,7 @@ from unittest.mock import patch
 from test_workflow import FakeBackend, configuration, write_audio
 
 from scribnic import open_workflow
+from scribnic.artifacts import Artifact, AudioFile, StepOutput
 from scribnic.cli import main
 from scribnic.downloads import download_file
 from scribnic.observability import Telemetry, tracer
@@ -27,6 +28,20 @@ class _TTY(io.StringIO):
     def isatty(self) -> bool:
         """Request the Rich terminal path for rendering tests."""
         return True
+
+
+class _InstrumentedBackend(FakeBackend):
+    """Fake provider requests that report the same spans as production adapters."""
+
+    def run(self, source: Artifact) -> StepOutput:
+        """Produce a deterministic artifact inside its actual inference phase."""
+        name = (
+            "scribnic.speech.request"
+            if isinstance(source, AudioFile)
+            else "scribnic.note.request"
+        )
+        with tracer().start_as_current_span(name):
+            return super().run(source)
 
 
 class TerminalTests(unittest.TestCase):
@@ -114,7 +129,7 @@ class TerminalTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with observe_progress(events.append), Telemetry(Path(directory)):
                 with self.assertRaises(KeyboardInterrupt):
-                    with tracer().start_as_current_span("scribnic.step.run"):
+                    with tracer().start_as_current_span("scribnic.speech.request"):
                         raise KeyboardInterrupt
         self.assertEqual([event.state for event in events], ["start", "interrupted"])
 
@@ -131,6 +146,50 @@ class TerminalTests(unittest.TestCase):
                         pass
         loads = [event for event in events if event.label == "Cargar servicio"]
         self.assertEqual([event.detail for event in loads], ["Bonsai-PQ2_0"] * 2)
+
+    def test_loading_finishes_before_each_inference_phase_starts(self) -> None:
+        """Show load/request order while retaining inclusive step spans for reports."""
+        for output, name, label in (
+            ("transcript", "scribnic.speech.request", "Transcribir"),
+            (
+                "diarized_transcript",
+                "scribnic.speech.request",
+                "Transcribir y diarizar",
+            ),
+            (
+                "diarized_transcript",
+                "scribnic.moss.inference",
+                "Transcribir y diarizar",
+            ),
+            ("note", "scribnic.note.request", "Generar nota"),
+        ):
+            with self.subTest(output=output, span=name):
+                events = []
+                with tempfile.TemporaryDirectory() as directory:
+                    with observe_progress(events.append), Telemetry(Path(directory)):
+                        with tracer().start_as_current_span(
+                            "scribnic.step.run",
+                            attributes={
+                                "scribnic.model.name": "test-model",
+                                "scribnic.output.kind": output,
+                            },
+                        ):
+                            with tracer().start_as_current_span(
+                                "scribnic.service.load"
+                            ):
+                                pass
+                            with tracer().start_as_current_span(name):
+                                pass
+                self.assertEqual(
+                    [(event.label, event.state) for event in events],
+                    [
+                        ("Cargar servicio", "start"),
+                        ("Cargar servicio", "done"),
+                        (label, "start"),
+                        (label, "done"),
+                    ],
+                )
+                self.assertTrue(all(event.detail == "test-model" for event in events))
 
 
 class CLICompatibilityTests(unittest.TestCase):
@@ -166,7 +225,8 @@ class CLICompatibilityTests(unittest.TestCase):
         def test_session(config: object, **kwargs: object) -> object:
             """Reuse the real planner with fake backends, without preparing assets."""
             return open_workflow(
-                configuration(), backend_factory=lambda step: FakeBackend(step, calls)
+                configuration(),
+                backend_factory=lambda step: _InstrumentedBackend(step, calls),
             )
 
         with tempfile.TemporaryDirectory() as directory:

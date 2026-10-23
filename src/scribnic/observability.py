@@ -94,29 +94,32 @@ def _progress_processor(stream: TextIO | None) -> "SpanProcessor":
             """Capture the caller's observer before SDK callbacks run."""
             self.observer = current_observer()
             self.tasks: dict[int, ProgressTask] = {}
+            self.steps: dict[int, Span] = {}
 
         def on_start(
             self, span: "Span", parent_context: "Context | None" = None
         ) -> None:
             """Notify selected phases without polling or reading exported traces."""
+            if span.name == "scribnic.step.run":
+                self.steps[span.context.span_id] = span
+            attributes = dict(span.attributes or {})
+            parent = self.steps.get(span.parent.span_id) if span.parent else None
+            if parent is not None:
+                attributes = {**(parent.attributes or {}), **attributes}
+            speech_label = (
+                "Transcribir y diarizar"
+                if attributes.get("scribnic.output.kind") == "diarized_transcript"
+                else "Transcribir"
+            )
             label = {
-                "scribnic.step.run": "Ejecutar etapa",
                 "scribnic.service.load": "Cargar servicio",
                 "scribnic.moss.load": "Cargar MOSS",
+                "scribnic.speech.request": speech_label,
+                "scribnic.moss.inference": speech_label,
+                "scribnic.note.request": "Generar nota",
             }.get(span.name)
             if self.observer is not None and label is not None:
-                output = span.attributes.get("scribnic.output.kind")
-                if output is not None:
-                    label = {
-                        "note": "Generar nota",
-                        "transcript": "Transcribir",
-                        "diarized_transcript": "Transcribir y diarizar",
-                    }.get(output, label)
-                detail = span.attributes.get("scribnic.model.name", "")
-                if not detail and span.parent is not None:
-                    parent_task = self.tasks.get(span.parent.span_id)
-                    if parent_task is not None:
-                        detail = parent_task.event.detail
+                detail = attributes.get("scribnic.model.name", "")
                 self.tasks[span.context.span_id] = ProgressTask(
                     label, detail=detail, observer=self.observer
                 )
@@ -126,6 +129,7 @@ def _progress_processor(stream: TextIO | None) -> "SpanProcessor":
 
         def on_end(self, span: "ReadableSpan") -> None:
             """Close matching notifications using the recorded span status."""
+            self.steps.pop(span.context.span_id, None)
             task = self.tasks.pop(span.context.span_id, None)
             if task is not None:
                 # OTel does not mark KeyboardInterrupt as an error. The synchronous

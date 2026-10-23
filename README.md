@@ -210,6 +210,8 @@ informe. Las descargas nativas muestran bytes y velocidad; aparece una barra sol
 cuando el servidor informa su tamaño. La inferencia por HTTP no ofrece un
 porcentaje fiable y se presenta con un spinner. No interpretamos el presupuesto
 de tokens como un total de trabajo. La exportación de trazas Torch tiene su fase.
+Las fases de transcripción y generación empiezan después de cargar su servicio;
+el resumen conserva el tiempo total de cada etapa, incluida su carga inicial.
 
 El progreso y los avisos van a `stderr`; `--format json` mantiene un único documento
 JSON en `stdout`. Al redirigir la salida de progreso se imprimen líneas estables,
