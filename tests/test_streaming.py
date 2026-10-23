@@ -8,9 +8,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from test_whisper_cpp import write_audio
+from test_whisper_cpp import FakeServer, prepared_files, write_audio
 
+from scribnic import Transcript
 from scribnic.backends.nemo_streaming import transcribe_stream
+from scribnic.backends.openai_transcription import OpenAITranscription
+from scribnic.config import load_workflow
 
 
 class FakeSocket:
@@ -44,6 +47,9 @@ class FakeSocket:
             self.session = event["session"]
             self.events.put({"type": "session.updated"})
         elif event["type"] == "input_audio_buffer.commit":
+            word = {"word": "Hola", "start": 0, "end": 0.5}
+            if self.session["speaker_diarization"]:
+                word["speaker"] = 1
             self.events.put(
                 {
                     "type": "conversation.item.input_audio_transcription.delta",
@@ -54,7 +60,7 @@ class FakeSocket:
                 {
                     "type": "conversation.item.input_audio_transcription.completed",
                     "transcript": "Hola",
-                    "words": [{"word": "Hola", "start": 0, "end": 0.5, "speaker": 1}],
+                    "words": [word],
                 }
             )
             self.events.put({"type": "input_audio_buffer.committed"})
@@ -73,6 +79,29 @@ class FakeSocket:
 )
 class StreamingTests(unittest.TestCase):
     """Verify actual protocol ordering without an inference service or model."""
+
+    def test_asr_workflow_disables_speaker_diarization_in_stream(self) -> None:
+        """The ASR-only preset uses a plain transcript and a non-diarized socket."""
+        step = load_workflow("nvidia_cpp_asr_streaming").steps[0]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            socket = FakeSocket()
+            service = FakeServer("http://127.0.0.1:1234/v1")
+            with (
+                patch(
+                    "scribnic.backends.connection.create_runtime", return_value=service
+                ),
+                patch("websockets.sync.client.connect", return_value=socket),
+            ):
+                backend = OpenAITranscription(step, prepared_files(root))
+                try:
+                    result = backend.run(write_audio(root))
+                finally:
+                    backend.close()
+            self.assertFalse(socket.session["speaker_diarization"])
+            self.assertIsInstance(result.artifact, Transcript)
+            self.assertEqual(result.artifact.segments[0].text, "Hola")
+            self.assertEqual(result.metadata["speaker_attribution_strategy"], "none")
 
     def test_replay_finalizes_each_recording_and_uses_only_final_text(self) -> None:
         """Reuse of weights does not imply reuse of sockets or hypotheses."""

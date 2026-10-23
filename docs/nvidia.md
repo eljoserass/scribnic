@@ -40,6 +40,26 @@ La salida pública es `DiarizedTranscript`. El texto puede proyectarse mediante
 `without_speakers()` para ablations; la nota acepta ambos tipos. El cliente nunca
 inventa roles clínicos a partir del número de hablante.
 
+## Variantes sin diarización
+
+`nvidia_cpp_asr_offline` y `nvidia_cpp_asr_streaming` usan el mismo ASR multilingüe,
+runtime y generador de notas, sin declarar ni preparar el diarizador. El servidor
+arranca solo con ASR; la petición HTTP usa `diarization=false` y la sesión WebSocket
+usa `speaker_diarization=false`. Producen `Transcript` con tiempos y sin hablantes;
+la nota se genera a partir de ese texto. Los recursos ya presentes se reutilizan.
+
+```bash
+uv run scribnic run consulta.wav --workflow nvidia_cpp_asr_offline
+uv run --extra streaming scribnic run consulta.wav --workflow nvidia_cpp_asr_streaming
+
+# Obtener solo la transcripción, sin generar nota.
+uv run scribnic run consulta.wav --workflow nvidia_cpp_asr_offline --output transcript
+```
+
+Desactivar diarización evita ejecutar ese modelo. Para aislar solo el efecto de las
+etiquetas sobre una nota, utilizar en cambio la misma transcripción diarizada y su
+proyección `without_speakers()` con el mismo generador.
+
 ## Estrategia de diarización
 
 El runtime C++ reconoce palabras y les atribuye un hablante mediante la actividad

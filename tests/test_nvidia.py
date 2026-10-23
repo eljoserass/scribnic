@@ -17,12 +17,46 @@ from scribnic.backends.openai_transcription import OpenAITranscription
 from scribnic.backends.transcription_formats import parse_segments, parse_words
 from scribnic.config import RuntimeConfig, load_workflow
 from scribnic.downloads import ResourceManager, prepare_binary
+from scribnic.planning import resolve_plan
 from scribnic.runtimes import NemoServer
 from scribnic.storage import artifact_directory
 
 
 class NvidiaContractTests(unittest.TestCase):
     """Exercise artifact capabilities, pinned weight variants and response schemas."""
+
+    def test_asr_presets_prepare_no_diarizer_and_allow_transcript_output(self) -> None:
+        """Both modes prepare only ASR and can stop before note generation."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            files = prepared_files(root)
+            for mode in ("offline", "streaming"):
+                with self.subTest(mode=mode):
+                    config = load_workflow(f"nvidia_cpp_asr_{mode}")
+                    with open_workflow(config, prepare=False):
+                        pass
+                    plan = resolve_plan(config, "audio", "transcript")
+                    self.assertEqual(len(plan), 1)
+                    step = plan[0].step
+                    self.assertEqual(step.companions, {})
+                    with (
+                        patch(
+                            "scribnic.downloads.prepare_model",
+                            return_value=files.model_path,
+                        ) as prepare_model,
+                        patch(
+                            "scribnic.downloads.prepare_binary",
+                            return_value=files.binary,
+                        ),
+                    ):
+                        prepared = ResourceManager(cache=root, download=False).prepare(
+                            step
+                        )
+                    prepare_model.assert_called_once()
+                    self.assertNotIn(
+                        "--diar-model",
+                        NemoServer(step.runtime, prepared)._command(1234),
+                    )
 
     def test_presets_pin_both_models_without_optional_imports(self) -> None:
         """Native presets need no NeMo/PyTorch installation."""
@@ -135,6 +169,33 @@ class NvidiaContractTests(unittest.TestCase):
 
 class NvidiaServiceTests(unittest.TestCase):
     """Exercise persistent service commands and the shared HTTP client."""
+
+    def test_asr_only_http_disables_diarization_and_keeps_word_times(self) -> None:
+        """Request plain speech recognition rather than removing labels afterwards."""
+        step = load_workflow("nvidia_cpp_asr_offline").steps[0]
+        payload = {
+            "text": "Hola",
+            "words": [{"word": "Hola", "start": 0.1, "end": 0.5}],
+        }
+        with (
+            tempfile.TemporaryDirectory() as temporary,
+            transcription_server(payload) as (url, requests),
+        ):
+            root = Path(temporary)
+            service = FakeServer(url)
+            with patch(
+                "scribnic.backends.connection.create_runtime", return_value=service
+            ):
+                backend = OpenAITranscription(step, prepared_files(root))
+                try:
+                    result = backend.run(write_audio(root))
+                finally:
+                    backend.close()
+            self.assertEqual(requests[0][1]["diarization"], "false")
+            self.assertIsInstance(result.artifact, Transcript)
+            self.assertEqual(result.artifact.segments[0].start, 0.1)
+            self.assertEqual(result.artifact.segments[0].text, "Hola")
+            self.assertEqual(result.metadata["speaker_attribution_strategy"], "none")
 
     def test_server_loads_both_models_without_a_recording_argument(self) -> None:
         """The service owns weights; recordings belong to subsequent requests."""

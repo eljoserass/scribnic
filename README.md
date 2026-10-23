@@ -109,6 +109,8 @@ ffmpeg -i entrada.mp3 -ac 1 -ar 16000 -c:a pcm_s16le consulta.wav
 | --- | --- | --- |
 | `nvidia_cpp_offline` | Nemotron 3.5 ASR Q8_0 + Nemotron 3 Diarization Q8_0; archivo por HTTP | Bonsai PQ2_0 / Prism; instalación base |
 | `nvidia_cpp_streaming` | Los mismos modelos; WAV por WebSocket, sin esperas de tiempo real | Bonsai / Prism; extra `[streaming]` |
+| `nvidia_cpp_asr_offline` | Solo Nemotron 3.5 ASR Q8_0; transcripción sin hablantes por HTTP | Bonsai / Prism; instalación base |
+| `nvidia_cpp_asr_streaming` | Solo Nemotron 3.5 ASR Q8_0; WAV por WebSocket, sin esperas de tiempo real | Bonsai / Prism; extra `[streaming]` |
 | `whisper_bonsai` / `whisper_bonsai_vad` | Whisper small multilingüe Q8_0, con VAD opcional | Bonsai / Prism; instalación base |
 | `moss_bonsai` | MOSS local / Transformers | Bonsai / Prism; extra `[moss]` |
 | `moss_bonsai_http` | MOSS local / Transformers | Bonsai en endpoint existente; extra `[moss]` |
