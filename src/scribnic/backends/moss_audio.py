@@ -3,7 +3,6 @@
 import importlib
 import json
 import sys
-import wave
 from importlib.metadata import version
 from pathlib import Path
 from time import perf_counter
@@ -14,6 +13,7 @@ from uuid import uuid4
 import psutil
 
 from ..artifacts import Artifact, AudioFile, Note, StepOutput
+from ..audio import read_waveform
 from ..config import StepConfig
 from ..downloads import PreparedStep, sha256_file
 from ..notes import note_instruction
@@ -103,6 +103,10 @@ class MossAudio:
             elif torch.backends.mps.is_available():
                 selected = "mps"
         self.device = torch.device(selected)
+        if self.device.type == "cuda" and not torch.cuda.is_available():
+            raise ValueError("The selected CUDA/ROCm device is unavailable.")
+        if self.device.type == "mps" and not torch.backends.mps.is_available():
+            raise ValueError("The selected Apple MPS device is unavailable.")
         dtype_name = self.step.runtime.settings.get("dtype", "auto")
         if dtype_name == "auto":
             dtype_name = {"cuda": "bfloat16", "mps": "float16"}.get(
@@ -120,7 +124,7 @@ class MossAudio:
             return 0.0
         started = perf_counter()
         with tracer().start_as_current_span(
-            "scribnic.service.load",
+            "scribnic.model.load",
             attributes={"scribnic.model.name": self.step.model.name},
         ):
             if version("transformers") != "4.57.1":
@@ -153,11 +157,7 @@ class MossAudio:
 
     def _inputs(self, source: AudioFile) -> "BatchEncoding":
         """Prepare the complete recording and the workflow's audio-note instruction."""
-        import numpy as np
-
-        with wave.open(str(source.path), "rb") as audio:
-            pcm = audio.readframes(audio.getnframes())
-        samples = np.frombuffer(pcm, dtype="<i2").astype("float32") / 32768
+        samples = read_waveform(source.path)
         inputs = self.processor(
             text=note_instruction(self.step), audios=[samples], return_tensors="pt"
         ).to(self.device)
@@ -235,7 +235,10 @@ class MossAudio:
         if self.device.type == "cuda":
             self.torch.cuda.reset_peak_memory_stats(self.device)
         started = perf_counter()
-        with tracer().start_as_current_span("scribnic.note.request"):
+        with tracer().start_as_current_span(
+            "scribnic.note.request",
+            attributes={"scribnic.model.name": self.step.model.name},
+        ):
             text, prompt_tokens, generated_tokens, profile = self._inference(source)
         path = diagnostic_path(
             "moss-audio-" + uuid4().hex + ".txt", cache=self.prepared.cache
@@ -282,7 +285,7 @@ class MossAudio:
         """Release owned weights/processor and accelerator allocation caches."""
         self.model = self.processor = None
         if self.torch is not None and self.device is not None:
-            if self.device.type == "cuda":
+            if self.device.type == "cuda" and self.torch.cuda.is_available():
                 self.torch.cuda.empty_cache()
-            elif self.device.type == "mps":
+            elif self.device.type == "mps" and self.torch.backends.mps.is_available():
                 self.torch.mps.empty_cache()

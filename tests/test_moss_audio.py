@@ -4,8 +4,9 @@ import json
 import tempfile
 import unittest
 from contextlib import nullcontext
+from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from unittest.mock import Mock, patch
 
 from test_workflow import write_audio
@@ -18,6 +19,45 @@ from scribnic.downloads import PreparedStep, ResourceManager
 
 class MossAudioTests(unittest.TestCase):
     """Check direct audio input, final-answer extraction and early rejection paths."""
+
+    def test_unavailable_accelerator_fails_before_source_or_weights_are_loaded(
+        self,
+    ) -> None:
+        """Explicit accelerator requests must not start an impossible model load."""
+        for device in ("cuda", "mps"):
+            with (
+                self.subTest(device=device),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                root = Path(directory)
+                step = load_workflow("moss_audio_note").steps[0]
+                step = replace(
+                    step,
+                    runtime=replace(
+                        step.runtime,
+                        settings=step.runtime.settings | {"device": device},
+                    ),
+                )
+                backend = MossAudio(step, PreparedStep(root, root, source_path=root))
+                torch = ModuleType("torch")
+                torch.device = lambda selected: SimpleNamespace(type=selected)
+                torch.cuda = SimpleNamespace(is_available=lambda: False)
+                torch.backends = SimpleNamespace(
+                    mps=SimpleNamespace(is_available=lambda: False)
+                )
+                with (
+                    patch.dict("sys.modules", {"torch": torch}),
+                    patch(
+                        "scribnic.backends.moss_audio.version", return_value="4.57.1"
+                    ),
+                    patch("scribnic.backends.moss_audio._provider") as provider,
+                    patch.object(backend, "_memory_check") as memory_check,
+                ):
+                    with self.assertRaisesRegex(ValueError, "unavailable"):
+                        backend.start()
+                    provider.assert_not_called()
+                    memory_check.assert_not_called()
+                    backend.close()
 
     def test_audio_workflow_produces_note_without_transcription(self) -> None:
         """The existing executor can run one audio-to-note step and save raw output."""

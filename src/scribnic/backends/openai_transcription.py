@@ -4,6 +4,7 @@ from collections.abc import Callable, Iterable
 from contextlib import closing
 from pathlib import Path
 from time import perf_counter
+from typing import BinaryIO
 from uuid import uuid4
 
 from ..artifacts import Artifact, AudioFile, DiarizedTranscript, StepOutput, Transcript
@@ -91,22 +92,12 @@ class OpenAITranscription:
 
     def _request(self, source: AudioFile) -> dict:
         """Upload a WAV or replay its PCM with the provider's streaming protocol."""
-        client = self.connection.client
         settings = self.step.model.settings
-        language = str(settings.get("language", "es"))
         if settings.get("mode", "offline") == "streaming":
             with closing(wav_chunks(source.path)) as chunks:
                 return self._stream_request(chunks)
         with source.path.open("rb") as audio:
-            response = client.audio.transcriptions.create(
-                model=str(settings.get("served_model", self.step.model.name)),
-                file=audio,
-                language=language,
-                response_format="verbose_json",
-                temperature=float(settings.get("temperature", 0)),
-                extra_body=self._parameters(),
-            )
-        return response.model_dump(mode="json")
+            return self._file_request(audio, parameters=self._parameters())
 
     def _stream_request(
         self, chunks: Iterable[bytes], *, on_update: Callable[[str], None] | None = None
@@ -146,15 +137,23 @@ class OpenAITranscription:
 
     def _window_request(self, wav: bytes) -> dict:
         """Request timestamped words so overlap reconciliation has temporal anchors."""
-        settings = self.step.model.settings
         parameters = self._parameters() | {
             "max_len": "1",
             "split_on_word": "true",
             "token_timestamps": "true",
         }
+        return self._file_request(
+            ("window.wav", wav, "audio/wav"), parameters=parameters
+        )
+
+    def _file_request(
+        self, audio: BinaryIO | tuple[str, bytes, str], *, parameters: dict[str, str]
+    ) -> dict:
+        """Send the shared multipart contract for full files or bounded windows."""
+        settings = self.step.model.settings
         response = self.connection.client.audio.transcriptions.create(
             model=str(settings.get("served_model", self.step.model.name)),
-            file=("window.wav", wav, "audio/wav"),
+            file=audio,
             language=str(settings.get("language", "es")),
             response_format="verbose_json",
             temperature=float(settings.get("temperature", 0)),

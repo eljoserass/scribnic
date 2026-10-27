@@ -2,10 +2,11 @@
 
 import logging
 import re
-import wave
+from collections.abc import Mapping
 from contextlib import contextmanager, nullcontext
 from importlib.metadata import version
 from time import perf_counter
+from typing import TYPE_CHECKING
 
 from ..artifacts import (
     Artifact,
@@ -14,10 +15,14 @@ from ..artifacts import (
     SpeakerSegment,
     StepOutput,
 )
+from ..audio import read_waveform
 from ..config import StepConfig
 from ..downloads import PreparedStep
 from ..observability import GenerationProgress, tracer
 from ..profiling import torch_profile
+
+if TYPE_CHECKING:
+    from torch import Tensor
 
 SEGMENT = re.compile(
     r"\[(\d+(?:\.\d+)?)\]\[S(\d+)\](.*?)\[(\d+(?:\.\d+)?)\]", re.DOTALL
@@ -118,12 +123,9 @@ class MossTranscribeDiarize:
             raise ValueError("The selected MPS device is unavailable.")
         return device
 
-    def _inputs(self, audio: AudioFile):
-        import numpy as np
-
-        with wave.open(str(audio.path), "rb") as wav:
-            frames = wav.readframes(wav.getnframes())
-        samples = np.frombuffer(frames, dtype="<i2").astype("float32") / 32768
+    def _inputs(self, audio: AudioFile) -> "Mapping[str, Tensor]":
+        """Apply MOSS's official diarization prompt and model-specific processing."""
+        samples = read_waveform(audio.path)
         messages = [
             {
                 "role": "user",
