@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from torch import device as TorchDevice
     from torch.nn import Module
     from torch.profiler import profile as TorchProfiler
+    from torch.profiler import record_function as RecordFunction
 
 _directory: ContextVar[Path | None] = ContextVar(
     "scribnic_profile_directory", default=None
@@ -48,50 +49,57 @@ def label_modules(
 
 
 def _label_forward(
-    module: "Module", label: str, torch: ModuleType, cleanup: ExitStack
+    module: "Module",
+    label: str,
+    torch: ModuleType,
+    cleanup: ExitStack,
+    *,
+    advance: Callable[[], None] | None = None,
+    autoregressive_prefix: str | None = None,
 ) -> None:
     """Attach a balanced range to one module, supporting nested forward calls."""
-    contexts = []
+    contexts: list[RecordFunction] = []
+    calls = 0
+
+    def close_remaining() -> None:
+        """Close ranges when interruption bypasses the module's exception hooks."""
+        while contexts:
+            contexts.pop().__exit__(None, None, None)
 
     def before(*args: object) -> None:
         """Open one range for this invocation."""
-        active = torch.profiler.record_function(label)
+        nonlocal calls
+        name = label
+        if autoregressive_prefix is not None:
+            phase = "prefill" if calls == 0 else "decode"
+            name = autoregressive_prefix + "." + phase
+            calls += 1
+        active = torch.profiler.record_function(name)
         active.__enter__()
         contexts.append(active)
 
     def after(*args: object) -> None:
         """Close the matching range even if the forward raised."""
+        # Another pre-hook can fail before ours opens a range.
+        if not contexts:
+            return
         contexts.pop().__exit__(None, None, None)
+        if advance is not None:
+            advance()
 
+    cleanup.callback(close_remaining)
     cleanup.callback(module.register_forward_pre_hook(before).remove)
     cleanup.callback(module.register_forward_hook(after, always_call=True).remove)
 
 
-def _module_ranges(model, torch, stack: ExitStack, advance=None) -> None:
+def _module_ranges(
+    model: "Module",
+    torch: ModuleType,
+    stack: ExitStack,
+    *,
+    advance: Callable[[], None] | None = None,
+) -> None:
     """Label existing forwards without changing the checkpoint implementation."""
-    decoder_calls = 0
-
-    def install(module, label):
-        contexts = []
-
-        def before(*args):
-            nonlocal decoder_calls
-            name = label
-            if label == "moss.decoder":
-                name = "moss.prefill" if decoder_calls == 0 else "moss.decode"
-                decoder_calls += 1
-            active = torch.profiler.record_function(name)
-            active.__enter__()
-            contexts.append(active)
-
-        def after(*args):
-            contexts.pop().__exit__(None, None, None)
-            if label == "moss.decoder" and advance is not None:
-                advance()
-
-        stack.callback(module.register_forward_pre_hook(before).remove)
-        stack.callback(module.register_forward_hook(after, always_call=True).remove)
-
     backbone = model.model
     for attribute, label in (
         ("whisper_encoder", "moss.encoder"),
@@ -100,7 +108,15 @@ def _module_ranges(model, torch, stack: ExitStack, advance=None) -> None:
     ):
         module = getattr(backbone, attribute, None)
         if module is not None:
-            install(module, label)
+            decoder = attribute == "language_model"
+            _label_forward(
+                module,
+                label,
+                torch,
+                stack,
+                advance=advance if decoder else None,
+                autoregressive_prefix="moss" if decoder else None,
+            )
 
 
 @contextmanager
@@ -114,28 +130,15 @@ def moss_audio_ranges(
     ]
     for index, merger in enumerate(model.deepstack_audio_merger_list):
         modules.append((merger, f"moss_audio.deepstack_{index}"))
-    calls = 0
-    contexts = []
-
-    def before(module: object, inputs: tuple) -> None:
-        """Open the range for prefill or the next decoding forward."""
-        nonlocal calls
-        name = "moss_audio.prefill" if calls == 0 else "moss_audio.decode"
-        calls += 1
-        active = torch.profiler.record_function(name)
-        active.__enter__()
-        contexts.append(active)
-
-    def after(module: object, inputs: tuple, output: object) -> None:
-        """Close the matching range and advance the bounded profiler window."""
-        contexts.pop().__exit__(None, None, None)
-        advance()
-
     with ExitStack() as cleanup:
         cleanup.enter_context(label_modules(tuple(modules), torch))
-        cleanup.callback(model.language_model.register_forward_pre_hook(before).remove)
-        cleanup.callback(
-            model.language_model.register_forward_hook(after, always_call=True).remove
+        _label_forward(
+            model.language_model,
+            "moss_audio.decoder",
+            torch,
+            cleanup,
+            advance=advance,
+            autoregressive_prefix="moss_audio",
         )
         yield
 
@@ -361,7 +364,7 @@ def torch_profile(
         window_steps=window_steps,
     ) as capture:
         with ExitStack() as stack:
-            _module_ranges(model, torch, stack, capture.advance)
+            _module_ranges(model, torch, stack, advance=capture.advance)
             yield capture.metadata
 
 

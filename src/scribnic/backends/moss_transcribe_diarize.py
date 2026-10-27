@@ -71,7 +71,7 @@ class MossTranscribeDiarize:
         if self.model is not None:
             return 0.0
         with tracer().start_as_current_span(
-            "scribnic.moss.load",
+            "scribnic.model.load",
             attributes={"scribnic.model.name": self.step.model.name},
         ):
             return self._load()
@@ -158,7 +158,7 @@ class MossTranscribeDiarize:
         include_gpu = self.step.runtime.settings.get("profile_gpu", False)
         with (
             tracer().start_as_current_span(
-                "scribnic.moss.inference",
+                "scribnic.speech.request",
                 attributes={
                     "scribnic.model.name": self.step.model.name,
                     "scribnic.output.kind": self.step.model.output,

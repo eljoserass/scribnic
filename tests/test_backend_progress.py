@@ -173,7 +173,7 @@ class BackendProgressTests(unittest.TestCase):
                 load.assert_called_once()
                 self.assert_phases(
                     events,
-                    load="Cargar MOSS",
+                    load="Cargar modelo",
                     action="Transcribir y diarizar",
                     model=step.model.name,
                 )

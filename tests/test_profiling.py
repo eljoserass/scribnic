@@ -5,16 +5,70 @@ import importlib.util
 import json
 import tempfile
 import unittest
+import warnings
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
-from scribnic.profiling import profile_directory, torch_profile
+from scribnic.profiling import label_modules, profile_directory, torch_profile
 
 
 @unittest.skipUnless(
     importlib.util.find_spec("torch"), "optional Torch extra not installed"
 )
 class TorchProfilingTests(unittest.TestCase):
+    """Check bounded operator capture and balanced hooks on tiny CPU modules."""
+
+    def test_keyboard_interrupt_closes_an_already_open_forward_range(self) -> None:
+        """Cleanup must work even when Torch does not invoke always-call hooks."""
+        import torch
+
+        module = torch.nn.Linear(2, 2)
+        active_range = MagicMock()
+
+        def interrupt(module: object, inputs: tuple[object, ...]) -> None:
+            """Interrupt after the profiler's pre-hook has opened its range."""
+            raise KeyboardInterrupt
+
+        with patch.object(torch.profiler, "record_function", return_value=active_range):
+            with self.assertRaises(KeyboardInterrupt):
+                with label_modules(((module, "moss.encoder"),), torch):
+                    handle = module.register_forward_pre_hook(interrupt)
+                    try:
+                        module(torch.ones(1, 2))
+                    finally:
+                        handle.remove()
+        active_range.__enter__.assert_called_once()
+        active_range.__exit__.assert_called_once()
+        self.assertFalse(module._forward_hooks)
+        self.assertFalse(module._forward_pre_hooks)
+
+    def test_an_earlier_pre_hook_failure_is_not_masked_by_profiler_cleanup(
+        self,
+    ) -> None:
+        """An always-call hook must tolerate its own pre-hook never having run."""
+        import torch
+
+        module = torch.nn.Linear(2, 2)
+
+        def fail(module: object, inputs: tuple[object, ...]) -> None:
+            """Simulate a third-party pre-hook failing before our range opens."""
+            raise ValueError("original pre-hook failure")
+
+        handle = module.register_forward_pre_hook(fail)
+        try:
+            with warnings.catch_warnings(record=True) as recorded:
+                with label_modules(((module, "moss.encoder"),), torch):
+                    with self.assertRaisesRegex(
+                        ValueError, "original pre-hook failure"
+                    ):
+                        module(torch.ones(1, 2))
+            self.assertFalse(recorded)
+        finally:
+            handle.remove()
+        self.assertFalse(module._forward_hooks)
+        self.assertFalse(module._forward_pre_hooks)
+
     def test_trace_labels_and_hooks_are_cleaned_up_even_on_error(self):
         import torch
 

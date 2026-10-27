@@ -8,6 +8,7 @@ import os
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from itertools import product
 from pathlib import Path
 from unittest.mock import patch
 
@@ -149,21 +150,21 @@ class TerminalTests(unittest.TestCase):
 
     def test_loading_finishes_before_each_inference_phase_starts(self) -> None:
         """Show load/request order while retaining inclusive step spans for reports."""
-        for output, name, label in (
+        loads = (
+            ("scribnic.service.load", "Cargar servicio"),
+            ("scribnic.model.load", "Cargar modelo"),
+        )
+        phases = (
             ("transcript", "scribnic.speech.request", "Transcribir"),
             (
                 "diarized_transcript",
                 "scribnic.speech.request",
                 "Transcribir y diarizar",
             ),
-            (
-                "diarized_transcript",
-                "scribnic.moss.inference",
-                "Transcribir y diarizar",
-            ),
             ("note", "scribnic.note.request", "Generar nota"),
-        ):
-            with self.subTest(output=output, span=name):
+        )
+        for (load, load_label), (output, name, label) in product(loads, phases):
+            with self.subTest(load=load, output=output):
                 events = []
                 with tempfile.TemporaryDirectory() as directory:
                     with observe_progress(events.append), Telemetry(Path(directory)):
@@ -174,17 +175,15 @@ class TerminalTests(unittest.TestCase):
                                 "scribnic.output.kind": output,
                             },
                         ):
-                            with tracer().start_as_current_span(
-                                "scribnic.service.load"
-                            ):
+                            with tracer().start_as_current_span(load):
                                 pass
                             with tracer().start_as_current_span(name):
                                 pass
                 self.assertEqual(
                     [(event.label, event.state) for event in events],
                     [
-                        ("Cargar servicio", "start"),
-                        ("Cargar servicio", "done"),
+                        (load_label, "start"),
+                        (load_label, "done"),
                         (label, "start"),
                         (label, "done"),
                     ],

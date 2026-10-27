@@ -114,9 +114,7 @@ def _progress_processor(stream: TextIO | None) -> "SpanProcessor":
             label = {
                 "scribnic.service.load": "Cargar servicio",
                 "scribnic.model.load": "Cargar modelo",
-                "scribnic.moss.load": "Cargar MOSS",
                 "scribnic.speech.request": speech_label,
-                "scribnic.moss.inference": speech_label,
                 "scribnic.note.request": "Generar nota",
             }.get(span.name)
             if self.observer is not None and label is not None:
