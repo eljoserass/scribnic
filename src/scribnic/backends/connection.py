@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 
 from ..config import StepConfig
 from ..downloads import PreparedStep
-from ..observability import tracer
 from ..runtimes import create_runtime
+from ..telemetry import tracer
 
 if TYPE_CHECKING:
     from openai import OpenAI

@@ -18,8 +18,8 @@ from ..artifacts import (
 from ..audio import read_waveform
 from ..config import StepConfig
 from ..downloads import PreparedStep
-from ..observability import GenerationProgress, tracer
-from ..profiling import torch_profile
+from ..telemetry import GenerationProgress, tracer
+from ..telemetry.profiling import torch_profile
 
 if TYPE_CHECKING:
     from torch import Tensor

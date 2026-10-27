@@ -21,12 +21,12 @@ from .artifacts import (
 )
 from .audio_stream import SAMPLE_RATE, PCMRecording, UpdateCallback
 from .config import StepConfig, WorkflowConfig, artifact_kind, load_workflow
-from .observability import trace_id, tracer
 from .planning import PlannedStep, resolve_plan, validate_workflow
-from .profiling import profile_directory
-from .progress import phase
-from .resources import ResourceMonitor
 from .streaming import StreamingBackend
+from .telemetry import trace_id, tracer
+from .telemetry.process_metrics import ResourceMonitor
+from .telemetry.profiling import profile_directory
+from .telemetry.progress import phase
 
 if TYPE_CHECKING:
     from .storage import RunStore

@@ -4,7 +4,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from scribnic.resources import ResourceMonitor
+from scribnic.telemetry.process_metrics import ResourceMonitor
 
 
 class ResourceAggregationTests(unittest.TestCase):

@@ -18,8 +18,8 @@ from scribnic.backends.moss_transcribe_diarize import MossTranscribeDiarize
 from scribnic.backends.openai_chat import OpenAIChat
 from scribnic.backends.openai_transcription import OpenAITranscription
 from scribnic.config import load_workflow
-from scribnic.observability import Telemetry
-from scribnic.progress import ProgressEvent, observe_progress
+from scribnic.telemetry import Telemetry
+from scribnic.telemetry.progress import ProgressEvent, observe_progress
 
 
 def _load_fake_moss(backend: MossTranscribeDiarize) -> float:

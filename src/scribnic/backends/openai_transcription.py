@@ -11,9 +11,9 @@ from ..artifacts import Artifact, AudioFile, DiarizedTranscript, StepOutput, Tra
 from ..audio_stream import PCMRecording, wav_chunks
 from ..config import StepConfig
 from ..downloads import PreparedStep, model_provenance
-from ..observability import speech_metrics, tracer
-from ..profiling import native_profile
 from ..storage import diagnostic_path, write_json
+from ..telemetry import speech_metrics, tracer
+from ..telemetry.profiling import native_profile
 from .connection import OpenAIConnection
 from .transcription_formats import parse_segments, parse_words
 

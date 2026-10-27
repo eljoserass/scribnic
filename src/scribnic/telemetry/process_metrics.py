@@ -8,7 +8,7 @@ from typing import Callable
 import psutil
 from opentelemetry import context
 
-from .observability import meter
+from .otel import meter
 
 
 class ResourceMonitor:
@@ -35,17 +35,20 @@ class ResourceMonitor:
         self._cpu = metrics.create_gauge("scribnic.process.cpu.cores", unit="1")
 
     def __enter__(self) -> "ResourceMonitor":
+        """Take an initial sample and start the execution's sampling thread."""
         self._sample()
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
         return self
 
     def __exit__(self, *exc: object) -> None:
+        """Stop sampling and record a final snapshot before reporting."""
         self._stop.set()
         self._thread.join(timeout=2)
         self._sample()
 
     def _loop(self) -> None:
+        """Sample periodically until the owning execution closes this monitor."""
         while not self._stop.wait(self.interval):
             self._sample()
 

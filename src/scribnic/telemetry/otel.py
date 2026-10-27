@@ -19,21 +19,23 @@ if TYPE_CHECKING:
     from opentelemetry.sdk.resources import Resource
     from opentelemetry.sdk.trace import ReadableSpan, Span, SpanProcessor
 
-    from .config import StepConfig
+    from ..config import StepConfig
 
-_providers: ContextVar[tuple | None] = ContextVar(
-    "scribnic_otel_providers", default=None
+_providers: ContextVar[tuple[trace.TracerProvider, metrics.MeterProvider] | None] = (
+    ContextVar("scribnic_otel_providers", default=None)
 )
 
 
-def tracer():
+def tracer() -> trace.Tracer:
+    """Use this call's provider or the host's global OpenTelemetry provider."""
     providers = _providers.get()
     if providers is not None:
         return providers[0].get_tracer("scribnic", "0.1.0")
     return trace.get_tracer("scribnic", "0.1.0")
 
 
-def meter():
+def meter() -> metrics.Meter:
+    """Use this call's metric provider without replacing the host's global one."""
     providers = _providers.get()
     if providers is not None:
         return providers[1].get_meter("scribnic", "0.1.0")
@@ -41,6 +43,7 @@ def meter():
 
 
 def trace_id() -> str | None:
+    """Return the active trace ID, preserving the absence of a recording span."""
     current = trace.get_current_span().get_span_context()
     return f"{current.trace_id:032x}" if current.is_valid else None
 
@@ -48,7 +51,8 @@ def trace_id() -> str | None:
 class GenerationProgress:
     """Rate-limited diagnostics without logging model input or generated text."""
 
-    def __init__(self, name: str, interval: float = 5.0):
+    def __init__(self, name: str, *, interval: float = 5.0) -> None:
+        """Configure generation logging with a minimum interval in seconds."""
         self.name = name
         self.interval = interval
         self.started = monotonic()
@@ -57,6 +61,7 @@ class GenerationProgress:
         self.logger = logging.getLogger("scribnic.generation")
 
     def update(self, generated_tokens: int) -> None:
+        """Record the first observed token and periodically log cumulative counts."""
         now = monotonic()
         if self.first_token_at is None:
             self.first_token_at = now
@@ -75,6 +80,7 @@ class GenerationProgress:
         )
 
     def timings(self) -> dict[str, float]:
+        """Return observed first-token and total generation times in seconds."""
         if self.first_token_at is None:
             return {}
         return {
@@ -151,7 +157,10 @@ def _progress_processor(stream: TextIO | None) -> "SpanProcessor":
 class Telemetry:
     """Export real OTLP JSONL locally, without replacing a host's global SDK."""
 
-    def __init__(self, directory: str | Path, *, progress: TextIO | None = None):
+    def __init__(
+        self, directory: str | Path, *, progress: TextIO | None = None
+    ) -> None:
+        """Configure local export without opening files or starting SDK workers."""
         self.directory = Path(directory)
         self.progress = progress
         self._token = None
@@ -159,6 +168,7 @@ class Telemetry:
         self._cleanup = ExitStack()
 
     def __enter__(self) -> "Telemetry":
+        """Start local exporters and scope their providers to the current caller."""
         from opentelemetry.sdk.resources import Resource
 
         self.directory.mkdir(parents=True, exist_ok=True)
@@ -195,7 +205,8 @@ class Telemetry:
         if self.progress is not None or current_observer() is not None:
             self._traces.add_span_processor(_progress_processor(self.progress))
 
-    def _configure_metrics(self, resource) -> None:
+    def _configure_metrics(self, resource: "Resource") -> None:
+        """Own periodic local metric export and system/process instrumentation."""
         from opentelemetry.exporter.otlp.json.file import FileMetricExporter
         from opentelemetry.instrumentation.system_metrics import (
             SystemMetricsInstrumentor,
@@ -221,7 +232,8 @@ class Telemetry:
         self._instrumentor.instrument(meter_provider=self._metrics)
         self._cleanup.callback(self._instrumentor.uninstrument)
 
-    def _configure_logs(self, resource) -> None:
+    def _configure_logs(self, resource: "Resource") -> None:
+        """Attach scoped log exporters and restore the logger when closing."""
         from opentelemetry.exporter.otlp.json.file._log_exporter import FileLogExporter
         from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
         from opentelemetry.sdk._logs.export import SimpleLogRecordProcessor
@@ -247,6 +259,7 @@ class Telemetry:
             self._cleanup.callback(self._logger.removeHandler, console)
 
     def __exit__(self, *exc: object) -> None:
+        """Flush telemetry, restore the previous providers and close owned workers."""
         try:
             self._traces.force_flush()
             self._metrics.force_flush()

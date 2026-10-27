@@ -7,7 +7,7 @@ from ..artifacts import Artifact, DiarizedTranscript, Note, StepOutput, Transcri
 from ..config import StepConfig
 from ..downloads import PreparedStep
 from ..notes import format_conversation, note_instruction
-from ..observability import tracer
+from ..telemetry import tracer
 from .connection import OpenAIConnection
 
 if TYPE_CHECKING:

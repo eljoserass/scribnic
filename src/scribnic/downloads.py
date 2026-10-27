@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .config import ModelAsset, ModelConfig, RuntimeConfig, StepConfig
-from .progress import ProgressTask, phase
+from .telemetry.progress import ProgressTask, phase
 
 
 def cache_directory() -> Path:

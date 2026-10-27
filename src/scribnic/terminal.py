@@ -13,8 +13,8 @@ from rich.table import Table
 from rich.text import Text
 
 from .artifacts import RunResult
-from .progress import ProgressEvent, observe_progress
 from .reporting import print_result, timestamp
+from .telemetry.progress import ProgressEvent, observe_progress
 
 
 class _StatusColumn(ProgressColumn):

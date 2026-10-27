@@ -18,8 +18,8 @@ from scribnic import open_workflow
 from scribnic.artifacts import Artifact, AudioFile, StepOutput
 from scribnic.cli import main
 from scribnic.downloads import download_file
-from scribnic.observability import Telemetry, tracer
-from scribnic.progress import current_observer, observe_progress, phase
+from scribnic.telemetry import Telemetry, tracer
+from scribnic.telemetry.progress import current_observer, observe_progress, phase
 from scribnic.terminal import TerminalView, present_result
 
 

@@ -10,7 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from scribnic.profiling import label_modules, profile_directory, torch_profile
+from scribnic.telemetry.profiling import label_modules, profile_directory, torch_profile
 
 
 @unittest.skipUnless(

@@ -5,6 +5,21 @@ evaluation tools, and a future application server. Apply these rules to new and
 modified code; avoid unrelated formatting changes. These are refactor guidelines,
 not a claim that the current implementation already follows them.
 
+## Reference guides and engineering review
+
+- Use the [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html)
+  for Python language and style decisions, and Google's
+  [code review guidance](https://google.github.io/eng-practices/review/reviewer/looking-for.html)
+  for design, complexity, concurrency, tests, and documentation. The explicit
+  Scribnic rules below take precedence, including Ruff, 88 columns, and documenting
+  private functions.
+- Review responsibilities and resource ownership as well as formatting. Keep
+  abstractions tied to a concrete current need. A shorter file count or a passing
+  linter does not establish a simpler or correct design.
+- For concurrent or streaming code, review buffer growth, backpressure, normal
+  completion, cancellation, worker shutdown, and failure propagation explicitly.
+  Silence, end of an input source, and cancellation are separate events.
+
 ## Readable Python
 
 - Follow PEP 8 with four-space indentation and an 88-character formatting target.
@@ -172,6 +187,15 @@ def real_time_factor(
 
 ## Verification and repository hygiene
 
+- Run `uv run ruff check src tests` and `uv run ruff format --check src tests`.
+  Ruff checks imports, basic errors, and Google-style docstring formatting.
+  Its formatter handles layout; do not add competing formatters.
+- Run `uv run ruff check src/scribnic/telemetry --extend-select D,ANN` for
+  docstring presence and annotated signatures in the migrated telemetry package.
+  Expand that coverage as other modules are brought into compliance; do not
+  suppress inherited violations globally or add meaningless annotations to pass.
+  These checks do not validate type compatibility, documentation accuracy,
+  function responsibility, or architecture; those still need review.
 - Test meaningful behavior and public boundaries with small fakes. For the
   refactor, cover default audio-to-note execution, early stopping, transcript input,
   artifact isolation, and clear errors for unsupported workflows.

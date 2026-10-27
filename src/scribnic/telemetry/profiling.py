@@ -12,12 +12,13 @@ from time import monotonic
 from types import ModuleType
 from typing import TYPE_CHECKING, Callable, Iterator
 
+from ..storage import write_json
 from .progress import phase
-from .storage import write_json
 
 if TYPE_CHECKING:
     from torch import device as TorchDevice
     from torch.nn import Module
+    from torch.profiler import ProfilerAction, ProfilerActivity
     from torch.profiler import profile as TorchProfiler
     from torch.profiler import record_function as RecordFunction
 
@@ -149,14 +150,14 @@ class _ProfileWindows:
     def __init__(
         self,
         directory: Path,
-        torch,
+        torch: ModuleType,
         steps: int,
-        activities,
+        activities: list["ProfilerActivity"],
         *,
         name: str = "moss",
         scope: str = "MOSS frontend, encoder, adaptor, prefill and decode; model loading excluded",
         phase_prefix: str = "moss.",
-    ):
+    ) -> None:
         """Retain aggregate numbers and paths, never earlier windows' raw events."""
         self.directory = directory
         self.actions = torch.profiler.ProfilerAction
@@ -170,7 +171,8 @@ class _ProfileWindows:
         self.summary_path = directory / f"{name}-profile.json"
         self.export_and_aggregation_seconds = 0.0
 
-    def schedule(self, step: int):
+    def schedule(self, step: int) -> "ProfilerAction":
+        """Capture every step and flush completed windows without coverage gaps."""
         # Continuous coverage, including the first encoder/prefill and final tail.
         if (step + 1) % self.steps == 0:
             return self.actions.RECORD_AND_SAVE
@@ -211,7 +213,7 @@ class _ProfileWindows:
                 monotonic() - started,
             )
 
-    def _export_trace(self, profiler, destination: Path) -> None:
+    def _export_trace(self, profiler: "TorchProfiler", destination: Path) -> None:
         """Compress a completed trace without retaining its full JSON in memory."""
         # Stream with low compression; PyTorch's gzip exporter prioritizes size.
         with tempfile.NamedTemporaryFile(
@@ -351,8 +353,13 @@ def operator_profile(
 
 @contextmanager
 def torch_profile(
-    model, torch, device, *, include_gpu: bool = False, window_steps: int = 16
-):
+    model: "Module",
+    torch: ModuleType,
+    device: "TorchDevice",
+    *,
+    include_gpu: bool = False,
+    window_steps: int = 16,
+) -> Iterator[dict]:
     """Keep the MOSS adapter's existing profiling contract and forward labels."""
     with operator_profile(
         torch,

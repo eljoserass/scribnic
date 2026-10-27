@@ -17,7 +17,7 @@ from .workflow import WorkflowRunError
 
 app = typer.Typer(
     help="Run a local clinical note workflow or prepare its cached resources.",
-    add_completion=False,
+    add_completion=True,
     no_args_is_help=True,
     pretty_exceptions_enable=False,
 )

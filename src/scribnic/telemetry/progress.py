@@ -1,4 +1,4 @@
-"""Optional execution notifications, scoped to a caller and independent of any UI."""
+"""Scope optional execution notifications to a caller, independently of any UI."""
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager

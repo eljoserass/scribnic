@@ -17,9 +17,9 @@ from ..audio import read_waveform
 from ..config import StepConfig
 from ..downloads import PreparedStep, sha256_file
 from ..notes import note_instruction
-from ..observability import tracer
-from ..profiling import moss_audio_ranges, operator_profile
 from ..storage import diagnostic_path
+from ..telemetry import tracer
+from ..telemetry.profiling import moss_audio_ranges, operator_profile
 
 if TYPE_CHECKING:
     from torch import dtype as TorchDtype

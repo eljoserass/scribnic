@@ -13,13 +13,13 @@ from unittest.mock import patch
 from scribnic.backends.moss_transcribe_diarize import MossTranscribeDiarize
 from scribnic.config import load_workflow, validate_settings
 from scribnic.downloads import PreparedStep
-from scribnic.observability import GenerationProgress, Telemetry
+from scribnic.telemetry import GenerationProgress, Telemetry
 
 
 class ProgressTests(unittest.TestCase):
     def test_progress_reports_counts_at_intervals_and_records_first_token_time(self):
         with patch(
-            "scribnic.observability.monotonic", side_effect=[10, 12, 13, 18, 20]
+            "scribnic.telemetry.otel.monotonic", side_effect=[10, 12, 13, 18, 20]
         ):
             with self.assertLogs("scribnic.generation", logging.INFO) as logs:
                 progress = GenerationProgress("MOSS")

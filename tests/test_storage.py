@@ -16,9 +16,9 @@ from scribnic import (
     WorkflowRunError,
     open_workflow,
 )
-from scribnic.observability import Telemetry
 from scribnic.reporting import render_workflow_report
 from scribnic.storage import artifact_from_dict, artifact_to_dict, load_artifact
+from scribnic.telemetry import Telemetry
 
 
 class StorageTests(unittest.TestCase):

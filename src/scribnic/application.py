@@ -10,10 +10,10 @@ from .artifacts import ArtifactKind, AudioFile, RunResult
 from .audio import inspect_audio
 from .audio_stream import wav_chunks
 from .config import WorkflowConfig, load_workflow
-from .observability import Telemetry
 from .planning import resolve_plan, validate_workflow
-from .progress import phase
 from .storage import load_artifact, write_json
+from .telemetry import Telemetry
+from .telemetry.progress import phase
 from .workflow import open_workflow
 
 
@@ -46,8 +46,18 @@ def execute(
     """Run from a file and save artifacts, a report, and local OTLP files.
 
     Args:
+        workflow: Selected preset, TOML file, directory or parsed configuration.
+        input_path: WAV, saved transcript artifact or plain text input file.
+        directory: Empty output directory for artifacts, reports and telemetry.
+        output: Requested artifact; omitted to use the workflow's default note.
+        offline: Require cached model and runtime assets instead of downloading.
+        profile: Save optional detailed runtime traces alongside the run.
+        progress: Optional stream for plain execution diagnostics.
         realtime: Pace WAV fragments at source time. Requires a streaming workflow;
             inference still runs as soon as the configured input window is ready.
+
+    Returns:
+        The execution result, including reusable artifacts and their provenance.
     """
     with phase("Validar entrada y workflow"):
         config = load_workflow(workflow)

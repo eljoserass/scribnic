@@ -60,7 +60,7 @@ flowchart TB
     MANAGERS -. "arranque / disponibilidad / cierre" .-> NS
     MANAGERS -. "arranque / disponibilidad / cierre" .-> LS
 
-    CORE -. "spans y métricas" .-> OBS["observability.py / resources.py<br/>OpenTelemetry · CPU / RSS por proceso"]
+    CORE -. "spans y métricas" .-> OBS["telemetry/<br/>OpenTelemetry · CPU / RSS por proceso"]
     MANAGERS -. "PID, versión y logs" .-> OBS
     CORE --> STORE["storage.py / reporting.py<br/>Predicciones, procedencia e informe local"]
 ```
@@ -262,9 +262,11 @@ informe/directorio del run. Los avisos accionables siguen visibles sin verbose.
 uv run scribnic run consulta.wav --workflow whisper_bonsai
 uv run scribnic run consulta.wav --workflow whisper_bonsai --format json > result.json
 uv run scribnic setup --workflow nvidia_cpp_offline --verbose
+# Instalar el autocompletado para el shell actual.
+uv run scribnic --install-completion
 ```
 
-La presentación vive en `terminal.py`. Las señales opcionales de `progress.py`
+La presentación vive en `terminal.py`. Las señales de `telemetry/progress.py`
 quedan limitadas al contexto del llamante; el core no importa librerías de UI.
 Los spans de OpenTelemetry existentes proporcionan fases de ejecución y carga,
 sin leer ni sondear archivos de telemetría para actualizar la terminal.
@@ -346,8 +348,12 @@ comprimidas para Perfetto; instrumentar y exportar añade tiempo y memoria. Los
 benchmarks de latencia se ejecutan sin esa captura y separan carga de inferencia.
 
 La biblioteca usa APIs OpenTelemetry; la app o el harness configuran SDK/exporters.
-`scribnic.observability.Telemetry` proporciona exportación local opcional sin
+`scribnic.telemetry.Telemetry` proporciona exportación local opcional sin
 reemplazar el proveedor global del proceso anfitrión.
+
+La instrumentación se agrupa en `telemetry/`: `otel.py` configura spans, métricas
+y exportadores; `process_metrics.py` muestrea CPU/RSS; `profiling.py` captura
+perfiles detallados opcionales; `progress.py` emite avisos independientes de la UI.
 
 ## Desarrollo
 
@@ -355,6 +361,7 @@ reemplazar el proveedor global del proceso anfitrión.
 uv sync --locked --extra moss --extra streaming
 uv run ruff check src tests
 uv run ruff format --check src tests
+uv run ruff check src/scribnic/telemetry --extend-select D,ANN
 uv run python -m unittest discover -s tests -v
 ```
 
@@ -363,3 +370,8 @@ inferencia. El test real de MOSS se activa mediante `SCRIBNIC_LIVE_TESTS=1` y
 `SCRIBNIC_TEST_AUDIO`. Las reglas de responsabilidades, documentación y estilo están
 en [AGENTS.md](AGENTS.md). Validación de modelos y binarios: WSL/Linux x86_64 CPU;
 los assets de macOS/Windows están configurados, pero requieren pruebas en sus hosts.
+
+Ruff comprueba estilo, imports y formato de docstrings Google. El chequeo adicional
+de `telemetry/` exige docstrings y firmas anotadas en ese paquete ya migrado.
+Las responsabilidades y decisiones de diseño se revisan siguiendo las referencias
+de Google enlazadas en `AGENTS.md`; los linters no sustituyen esa revisión.
