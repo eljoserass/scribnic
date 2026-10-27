@@ -202,7 +202,10 @@ def _hub_cache() -> Path:
     return home / "hub"
 
 
-def _prepare_snapshot(model: ModelConfig, download: bool) -> Path:
+def _prepare_snapshot(
+    model: ModelConfig, download: bool, *, extra: str = "moss"
+) -> Path:
+    """Prepare a pinned optional snapshot without importing its model code."""
     if not model.repository or not model.revision:
         raise ValueError(f"Model {model.name} needs a repository and pinned revision.")
     repository = "models--" + model.repository.replace("/", "--")
@@ -216,7 +219,7 @@ def _prepare_snapshot(model: ModelConfig, download: bool) -> Path:
         from huggingface_hub import snapshot_download
     except ImportError as error:
         raise ImportError(
-            "Install scribnic[moss] to prepare the MOSS runtime."
+            f"Install scribnic[{extra}] to prepare this model runtime."
         ) from error
     return Path(
         snapshot_download(
@@ -234,7 +237,8 @@ def prepare_model(
     """Prepare the format selected explicitly by a model/runtime configuration."""
     if runtime.engine == "transformers":
         with phase("Preparar modelo", detail=model.name):
-            return _prepare_snapshot(model, download)
+            extra = str(runtime.settings.get("python_extra", "moss"))
+            return _prepare_snapshot(model, download, extra=extra)
     if runtime.engine not in {"llama_cpp", "whisper_cpp", "nemo_cpp"}:
         return None
     if not all((model.repository, model.revision, model.filename, model.sha256)):
@@ -261,6 +265,46 @@ class PreparedStep:
     binary: Path | None = None
     vad_model_path: Path | None = None
     companions: dict[str, Path] = field(default_factory=dict)
+    source_path: Path | None = None
+
+
+def prepare_source(runtime: RuntimeConfig, cache: Path, *, download: bool) -> Path:
+    """Install checksummed upstream Python code separately from model weights."""
+    asset = runtime.assets["source"]
+    directory = (
+        cache
+        / "runtimes"
+        / runtime.engine.replace("_", "-")
+        / str(runtime.settings["release"])
+    )
+    source = directory / str(runtime.settings["source_root"])
+    required = runtime.settings["required_source_files"]
+    if all((source / name).is_file() for name in required):
+        return source
+    archive = download_file(
+        asset["url"], directory / "source.tar.gz", asset["sha256"], allowed=download
+    )
+    _extract_archive(archive, directory)
+    if not all((source / name).is_file() for name in required):
+        raise ValueError(f"{runtime.name} source archive is incomplete.")
+    return source
+
+
+def _validate_python_packages(runtime: RuntimeConfig) -> None:
+    """Check exact optional runtime requirements without importing model libraries."""
+    from importlib.metadata import PackageNotFoundError, version
+
+    for package, expected in runtime.settings.get("required_packages", {}).items():
+        try:
+            compatible = version(package) == expected
+        except PackageNotFoundError:
+            compatible = False
+        if not compatible:
+            extra = runtime.settings["python_extra"]
+            raise ImportError(
+                f"{runtime.name} needs {package}=={expected}; use its separate extra "
+                f"with uv run --extra {extra} scribnic setup --workflow <workflow>."
+            )
 
 
 def prepare_vad(step: StepConfig, cache: Path, download: bool) -> Path | None:
@@ -289,6 +333,12 @@ class ResourceManager:
         """Download versioned weights, companions, and native runtimes as needed."""
         if step.name not in self._prepared:
             with phase("Preparar recursos", detail=step.model.name):
+                source = None
+                _validate_python_packages(step.runtime)
+                if "source" in step.runtime.assets:
+                    source = prepare_source(
+                        step.runtime, self.cache, download=self.download
+                    )
                 model = prepare_model(
                     step.model, step.runtime, self.cache, self.download
                 )
@@ -301,7 +351,7 @@ class ResourceManager:
                     for role, asset in step.companions.items()
                 }
                 self._prepared[step.name] = PreparedStep(
-                    self.cache, model, binary, vad, companions
+                    self.cache, model, binary, vad, companions, source
                 )
         return self._prepared[step.name]
 

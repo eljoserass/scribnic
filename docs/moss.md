@@ -58,12 +58,26 @@ Conviene mantener esa separación, excluir warmup del tiempo de inferencia y
 registrar o desactivar la caché del encoder al repetir audios. Sus resultados H100
 BF16 no predicen el rendimiento de esta CPU AMD ni de una Mac.
 
-## MOSS-Audio: posible experimento de audio a nota
+## MOSS-Audio: audio a nota offline
 
-Esta integración todavía no está implementada. MOSS-Audio es otro modelo: permite
-comprensión, preguntas y resúmenes de audio por instrucciones. Una SOAP directa es
-una hipótesis a evaluar; la ficha no acredita calidad clínica ni español. Probaría
-Instruct primero y Thinking como comparación. [Ficha del modelo](https://huggingface.co/OpenMOSS-Team/MOSS-Audio-4B-Thinking).
+`moss_audio_note` integra MOSS-Audio-4B-Thinking con un único paso `Audio → Note`.
+Es otro modelo, con encoder propio y Qwen3: no usa MOSS-Transcribe-Diarize ni Bonsai.
+La plantilla SOAP en español, sampling y presupuesto de salida pertenecen al workflow.
+La calidad clínica y en español sigue siendo una hipótesis a evaluar.
+[Ficha del modelo](https://huggingface.co/OpenMOSS-Team/MOSS-Audio-4B-Thinking).
+
+```bash
+UV_PROJECT_ENVIRONMENT=.venv-moss-audio uv run --extra moss-audio \
+  scribnic setup --workflow moss_audio_note
+UV_PROJECT_ENVIRONMENT=.venv-moss-audio uv run --extra moss-audio \
+  scribnic run consulta.wav --workflow moss_audio_note --profile
+```
+
+El extra fija Torch/torchaudio 2.9.1 y Transformers 4.57.1. No se puede combinar con
+`[moss]`, que usa Transformers 5; se declaran extras incompatibles y se recomienda
+un entorno separado. No se instalan Gradio/Streamlit ni SGLang para esta ruta.
+El gestor de recursos descarga el source oficial por commit y SHA256, y el snapshot
+de pesos por revisión. Las bibliotecas del modelo se importan al cargar este backend.
 
 El checkpoint Thinking declara unos 9.73 GiB solo en pesos, antes de activaciones
 y KV cache; no asumir que será ligero por llamarse 4B. Su contexto publicado es
@@ -72,20 +86,40 @@ ya excedería ese contexto antes de prompt y respuesta.
 [Índice de pesos](https://huggingface.co/OpenMOSS-Team/MOSS-Audio-4B-Thinking/blob/5163125c56c9d66eb3887221ef28e4ee506d59ef/model.safetensors.index.json),
 [configuración](https://huggingface.co/OpenMOSS-Team/MOSS-Audio-4B-Thinking/blob/5163125c56c9d66eb3887221ef28e4ee506d59ef/config.json).
 
-El ejemplo local contempla CUDA, MPS y CPU. Su servicio utiliza otro fork,
+El backend selecciona CUDA, MPS o CPU si están disponibles; el workflow puede fijar
+`device` y `dtype` en `[steps.note.runtime_settings]`. El cómputo automático usa
+BF16 en CUDA, FP16 en MPS y FP32 en CPU, registrado aparte del formato de pesos.
+Antes de cargar en CPU/MPS se comprueba que los pesos solos quepan en la memoria
+disponible; eso es un límite inferior y no garantiza que quepan las activaciones.
+El perfil conserva frontend, encoder, adapters, prefill y decode, con ventanas
+Torch opcionales, CPU/RSS y procedencia en el mismo informe.
+`[steps.note.runtime_settings] profile_gpu = true` solicita además actividades
+CUDA o signposts Metal para Instruments cuando el dispositivo lo permite.
+
+El ejemplo local contempla CUDA, MPS y CPU. Su servicio alternativo utiliza otro fork,
 `OpenMOSS/sglang`, rama `moss-audio`, con chat multimodal; no es el servicio
 SGLang Omni de transcripción anterior. La salida SSE documentada no demuestra
 entrada incremental de audio ni function calling fiable sobre ese audio.
 [Inferencia local](https://github.com/OpenMOSS/MOSS-Audio/blob/66326e6e0db34f036c86a76ba005efa4830c69dd/infer.py),
 [guía del servidor](https://github.com/OpenMOSS/MOSS-Audio/blob/66326e6e0db34f036c86a76ba005efa4830c69dd/moss_audio_usage_guide.md).
 
-El contrato futuro sería un backend `Audio → Note`, con template y sampling en el
-workflow. El planificador no necesita un transcript intermedio. La memoria por
-ventanas sería una estrategia adicional nuestra: cada ventana produciría una
+El planificador ejecuta el paso directo y no inventa un transcript intermedio.
+El backend separa el pensamiento del texto final y rechaza salida incompleta o
+presupuestos de contexto que exigirían truncar audio. No implementa streaming.
+La memoria por ventanas sería una estrategia adicional: cada ventana produciría una
 actualización validada o `sin_cambios`, conservando evidencia temporal, negaciones
 y correcciones antes de generar la nota final. Primero conviene probar audio
 completo corto. Para aislar el efecto de diarizar, usar el mismo texto con y sin
 etiquetas y el mismo generador; comparar dos sistemas distintos mide otra cosa.
+
+Validación actual: tests con fakes de la frontera pública, e inferencia con una
+instancia reducida aleatoria del código upstream para verificar formatos, generación
+y exportación de trazas. Esa instancia no valida el checkpoint ni la calidad.
+También se compararon los nombres y el número de parámetros de la arquitectura
+completa en dispositivo meta con el índice fijado: coinciden; el buffer calculado
+de posiciones lo contempla el cargador estándar de Transformers.
+El checkpoint completo no se ejecutó en esta WSL de 11 GiB; falta la prueba en una
+máquina con memoria suficiente. MPS/CUDA tampoco se han validado localmente.
 
 - [Servidor recomendado por MOSS](https://github.com/OpenMOSS/MOSS-Transcribe-Diarize#serve-with-sglang-omni)
 - [Contrato y plataformas de SGLang Omni](https://github.com/sgl-project/sglang-omni/blob/main/docs/cookbook/moss_transcribe_diarize.md)

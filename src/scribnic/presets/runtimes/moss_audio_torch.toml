@@ -1,0 +1,23 @@
+name = "moss_audio_torch"
+engine = "transformers"
+
+[settings]
+release = "66326e6e0db34f036c86a76ba005efa4830c69dd"
+source_root = "MOSS-Audio-66326e6e0db34f036c86a76ba005efa4830c69dd"
+device = "auto"
+dtype = "auto"
+threads = 6
+profile_window_steps = 16
+python_extra = "moss-audio"
+required_source_files = [
+  "src/__init__.py",
+  "src/modeling_moss_audio.py", "src/processing_moss_audio.py",
+  "src/configuration_moss_audio.py",
+]
+
+[settings.required_packages]
+transformers = "4.57.1"
+
+[assets.source]
+url = "https://codeload.github.com/OpenMOSS/MOSS-Audio/tar.gz/66326e6e0db34f036c86a76ba005efa4830c69dd"
+sha256 = "f4ecdf6bbff5f65209ecfffe1ed168f04a087315dcf904911717ef47e612b480"

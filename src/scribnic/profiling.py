@@ -103,6 +103,43 @@ def _module_ranges(model, torch, stack: ExitStack, advance=None) -> None:
             install(module, label)
 
 
+@contextmanager
+def moss_audio_ranges(
+    model: "Module", torch: ModuleType, advance: Callable[[], None]
+) -> Iterator[None]:
+    """Label audio encoding/adapters and separate prefill from token decoding."""
+    modules = [
+        (model.audio_encoder, "moss_audio.encoder"),
+        (model.audio_adapter, "moss_audio.adapter"),
+    ]
+    for index, merger in enumerate(model.deepstack_audio_merger_list):
+        modules.append((merger, f"moss_audio.deepstack_{index}"))
+    calls = 0
+    contexts = []
+
+    def before(module: object, inputs: tuple) -> None:
+        """Open the range for prefill or the next decoding forward."""
+        nonlocal calls
+        name = "moss_audio.prefill" if calls == 0 else "moss_audio.decode"
+        calls += 1
+        active = torch.profiler.record_function(name)
+        active.__enter__()
+        contexts.append(active)
+
+    def after(module: object, inputs: tuple, output: object) -> None:
+        """Close the matching range and advance the bounded profiler window."""
+        contexts.pop().__exit__(None, None, None)
+        advance()
+
+    with ExitStack() as cleanup:
+        cleanup.enter_context(label_modules(tuple(modules), torch))
+        cleanup.callback(model.language_model.register_forward_pre_hook(before).remove)
+        cleanup.callback(
+            model.language_model.register_forward_hook(after, always_call=True).remove
+        )
+        yield
+
+
 class _ProfileWindows:
     """Flush completed windows and aggregate statistics without retaining events."""
 

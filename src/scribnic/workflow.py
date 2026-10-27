@@ -2,6 +2,7 @@
 
 import logging
 import threading
+from collections.abc import Iterable
 from contextlib import ExitStack
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -18,12 +19,14 @@ from .artifacts import (
     StepOutput,
     StepRecord,
 )
+from .audio_stream import SAMPLE_RATE, PCMRecording, UpdateCallback
 from .config import StepConfig, WorkflowConfig, artifact_kind, load_workflow
 from .observability import trace_id, tracer
 from .planning import PlannedStep, resolve_plan, validate_workflow
 from .profiling import profile_directory
 from .progress import phase
 from .resources import ResourceMonitor
+from .streaming import StreamingBackend
 
 if TYPE_CHECKING:
     from .storage import RunStore
@@ -56,9 +59,12 @@ class WorkflowRunError(RuntimeError):
 
 @dataclass
 class _Execution:
+    """Retain artifacts, diagnostics and optional recording for one isolated request."""
+
     config: WorkflowConfig
     source: Artifact
     target: ArtifactKind
+    input_stream: PCMRecording | None = None
     run_id: str = field(default_factory=lambda: uuid4().hex)
     started_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
@@ -198,6 +204,67 @@ class WorkflowSession:
         profile: bool = False,
     ) -> RunResult:
         """Produce the requested artifact; supplied transcripts bypass speech."""
+        return self._run(source, output=output, output_dir=output_dir, profile=profile)
+
+    def run_stream(
+        self,
+        chunks: Iterable[bytes],
+        *,
+        output: ArtifactKind | None = None,
+        output_dir: str | Path | None = None,
+        profile: bool = False,
+        on_update: UpdateCallback | None = None,
+        cancel: threading.Event | None = None,
+    ) -> RunResult:
+        """Consume arriving mono PCM16/16 kHz, then optionally generate one note.
+
+        The caller owns capture. Recording, diagnostics and model resources use
+        the normal execution lifecycle. Updates are replaceable snapshots; they
+        must not be concatenated. The recording is retained for result reuse.
+
+        Args:
+            chunks: Complete frames of mono PCM16 little-endian audio at 16 kHz.
+            output: Requested artifact, defaulting to the workflow's note.
+            output_dir: Empty results directory; omitted recordings use the cache.
+            profile: Export optional operator traces where the runtime supports them.
+            on_update: Receive replaceable transcript snapshots during recognition.
+            cancel: Request cancellation between blocks; the caller stops its device.
+
+        Returns:
+            Saved/reusable artifacts and execution diagnostics, including recorded audio.
+
+        Raises:
+            ValueError: If the selected workflow cannot consume incremental audio.
+            WorkflowRunError: If input, recognition or note generation fails.
+        """
+        from .streaming import prepare_recording
+
+        recording = prepare_recording(
+            chunks,
+            self.config,
+            output=output or self.config.default_output,
+            output_dir=output_dir,
+            on_update=on_update,
+            cancel=cancel,
+        )
+        return self._run(
+            AudioFile(recording.path, sample_rate=SAMPLE_RATE),
+            output=output,
+            output_dir=output_dir,
+            profile=profile,
+            stream=recording,
+        )
+
+    def _run(
+        self,
+        source: Artifact,
+        *,
+        output: ArtifactKind | None,
+        output_dir: str | Path | None,
+        profile: bool,
+        stream: PCMRecording | None = None,
+    ) -> RunResult:
+        """Serialize requests while sharing persistence and instrumentation paths."""
         with self._lock:
             if self._closed:
                 raise RuntimeError("This workflow session has been closed.")
@@ -210,7 +277,7 @@ class WorkflowSession:
             from .storage import RunStore
 
             store = RunStore(output_dir) if output_dir is not None else None
-            state = _Execution(self.config, source, target)
+            state = _Execution(self.config, source, target, input_stream=stream)
             attributes = {
                 "scribnic.run.id": state.run_id,
                 "scribnic.workflow.name": self.config.name,
@@ -237,15 +304,29 @@ class WorkflowSession:
         profiles = store.directory / "profiles" if profile else None
         try:
             directory = store.directory if store else None
-            with monitor, profile_directory(profiles), artifact_directory(directory):
+            with (
+                monitor,
+                profile_directory(profiles),
+                artifact_directory(directory),
+                ExitStack() as capture,
+            ):
+                if state.input_stream is not None:
+                    capture.enter_context(state.input_stream)
                 self._validate_source(state)
                 if store is not None:
                     store.save(state.snapshot())
                 self._prepare_backends(plan)
                 self._run_steps(state, plan, store)
         except (Exception, KeyboardInterrupt) as error:
+            if state.input_stream is not None:
+                state.source = state.input_stream.finish()
+                state.artifacts["audio"] = state.source
             state.resources = monitor.summary()
-            status = "interrupted" if isinstance(error, KeyboardInterrupt) else "error"
+            status = (
+                "interrupted"
+                if isinstance(error, (KeyboardInterrupt, InterruptedError))
+                else "error"
+            )
             result = state.snapshot(status, str(error) or status)
             logging.getLogger(__name__).error("Workflow failed: %s", result.error)
             self._save_failure(store, result, error)
@@ -261,7 +342,8 @@ class WorkflowSession:
 
     @staticmethod
     def _validate_source(state: _Execution) -> None:
-        if isinstance(state.source, AudioFile):
+        """Validate file inputs while incremental input is checked as it arrives."""
+        if isinstance(state.source, AudioFile) and state.input_stream is None:
             from .audio import inspect_audio
 
             with tracer().start_as_current_span("scribnic.audio.validate"):
@@ -295,9 +377,7 @@ class WorkflowSession:
             with tracer().start_as_current_span(
                 "scribnic.step.run", attributes=attributes
             ):
-                produced = self._backend(planned.step).run(
-                    state.artifacts[planned.input_kind]
-                )
+                produced = self._produce(planned, state)
                 if produced.artifact.kind != planned.step.model.output:
                     raise ValueError(
                         f"Backend {planned.step.name!r} returned the wrong artifact."
@@ -313,6 +393,20 @@ class WorkflowSession:
             )
             if store is not None:
                 store.save(state.snapshot())
+
+    def _produce(self, planned: PlannedStep, state: _Execution) -> StepOutput:
+        """Delegate recognition or ordinary artifact inference to the selected backend."""
+        backend = self._backend(planned.step)
+        if state.input_stream is not None and planned.input_kind == "audio":
+            if not isinstance(backend, StreamingBackend):
+                raise ValueError(
+                    f"Backend {planned.step.backend!r} cannot stream input."
+                )
+            produced = backend.run_stream(state.input_stream)
+            state.source = state.input_stream.finish()
+            state.artifacts["audio"] = state.source
+            return produced
+        return backend.run(state.artifacts[planned.input_kind])
 
     @staticmethod
     def _save_failure(store, result: RunResult, original: BaseException) -> None:

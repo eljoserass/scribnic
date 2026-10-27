@@ -24,15 +24,29 @@ moss = [
     "torch>=2.8,<3",
     "transformers>=5,<6",
 ]
+moss-audio = [
+    "accelerate>=1,<2",
+    "huggingface-hub>=0.34,<1",
+    "numpy>=2,<3",
+    "torch==2.9.1",
+    "torchaudio==2.9.1",
+    "transformers==4.57.1",
+    "tiktoken>=0.12,<1",
+    "einops>=0.8,<1",
+]
 
 [dependency-groups]
 dev = ["ruff>=0.15,<1"]
 
 [tool.uv]
+conflicts = [[{extra = "moss"}, {extra = "moss-audio"}]]
 environments = ["sys_platform == 'linux'", "sys_platform == 'darwin'", "sys_platform == 'win32'"]
 
 [tool.uv.sources]
 torch = [
+    { index = "pytorch-cpu", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+]
+torchaudio = [
     { index = "pytorch-cpu", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
 ]
 

@@ -11,6 +11,7 @@ from .artifacts import (
     TextSegment,
     Transcript,
 )
+from .audio_stream import TranscriptUpdate, wav_chunks
 from .config import (
     ModelAsset,
     ModelConfig,
@@ -36,6 +37,7 @@ __all__ = [
     "StepConfig",
     "TextSegment",
     "Transcript",
+    "TranscriptUpdate",
     "WorkflowConfig",
     "WorkflowRunError",
     "WorkflowSession",
@@ -43,4 +45,5 @@ __all__ = [
     "load_workflow",
     "open_workflow",
     "save_artifact",
+    "wav_chunks",
 ]

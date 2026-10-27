@@ -17,6 +17,7 @@ def create_backend(step: StepConfig, prepared: PreparedStep) -> "Backend":
         "openai_chat": ("openai_chat", "OpenAIChat"),
         "openai_transcription": ("openai_transcription", "OpenAITranscription"),
         "moss_transcribe_diarize": ("moss_transcribe_diarize", "MossTranscribeDiarize"),
+        "moss_audio": ("moss_audio", "MossAudio"),
     }
     if step.backend not in adapters:
         raise ValueError(f"Unknown workflow backend: {step.backend}")

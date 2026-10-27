@@ -1,0 +1,24 @@
+name = "whisper_bonsai_streaming"
+inputs = ["audio", "transcript"]
+default_output = "note"
+download_missing = true
+
+[steps.speech]
+backend = "openai_transcription"
+model = "whisper_small_q8_0"
+runtime = "whisper_cpp"
+
+[steps.speech.model_settings]
+mode = "streaming"
+window_seconds = 10
+overlap_seconds = 2
+
+[steps.note]
+backend = "openai_chat"
+model = "Ternary-Bonsai-2-2B-PQ2_0"
+runtime = "llama_cpp_prism"
+template = "soap_es"
+source = "speech"
+
+[steps.note.model_settings]
+temperature = 0.0

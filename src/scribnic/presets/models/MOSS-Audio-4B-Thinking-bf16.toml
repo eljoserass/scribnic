@@ -1,0 +1,19 @@
+name = "MOSS-Audio-4B-Thinking-bf16"
+inputs = ["audio"]
+output = "note"
+repository = "OpenMOSS-Team/MOSS-Audio-4B-Thinking"
+revision = "5163125c56c9d66eb3887221ef28e4ee506d59ef"
+filename = "model.safetensors.index.json"
+quantization = "BF16"
+
+[settings]
+max_tokens = 2048
+temperature = 0.0
+top_p = 1.0
+top_k = 50
+required_files = [
+  "config.json", "preprocessor_config.json", "chat_template.jinja",
+  "tokenizer_config.json", "vocab.json", "merges.txt",
+  "model.safetensors.index.json", "model-00001-of-00003.safetensors",
+  "model-00002-of-00003.safetensors", "model-00003-of-00003.safetensors",
+]

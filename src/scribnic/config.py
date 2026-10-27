@@ -161,8 +161,26 @@ def _validate_adapter(step: StepConfig) -> None:
         if engine != "transformers":
             raise ValueError("The local MOSS backend needs the Transformers runtime.")
         return
+    if step.backend == "moss_audio":
+        if (
+            engine != "transformers"
+            or step.model.inputs != ("audio",)
+            or step.model.output != "note"
+        ):
+            raise ValueError(
+                "moss_audio requires its optional runtime and Audio -> Note."
+            )
+        if step.template is None and step.instruction is None:
+            raise ValueError("MOSS-Audio note generation needs a note template.")
+        return
     if step.backend != "openai_transcription":
         return
+    _validate_transcription_adapter(step)
+
+
+def _validate_transcription_adapter(step: StepConfig) -> None:
+    """Validate speech protocols, streaming geometry and required companion assets."""
+    engine = step.runtime.engine
     if engine not in {"whisper_cpp", "nemo_cpp", "external_endpoint"}:
         raise ValueError(
             "openai_transcription needs a speech server or external endpoint."
@@ -177,9 +195,20 @@ def _validate_adapter(step: StepConfig) -> None:
         raise ValueError("Speech mode must be offline or streaming.")
     if response == "whisper_segments" and step.model.output != "transcript":
         raise ValueError("Whisper segments do not provide speaker diarization.")
-    if mode == "streaming" and response != "nemo_words":
+    if mode == "streaming" and response not in {"nemo_words", "whisper_segments"}:
         raise ValueError(
-            "Streaming input currently requires the NeMo WebSocket protocol."
+            "Streaming input requires NeMo WebSocket or Whisper HTTP windows."
+        )
+    if mode == "streaming" and response == "whisper_segments":
+        if step.model.settings.get("word_timestamps") is False:
+            raise ValueError(
+                "Windowed Whisper requires word timestamps to reconcile overlap."
+            )
+        from .backends.whisper_windowed import WindowSettings
+
+        WindowSettings(
+            window_seconds=step.model.settings.get("window_seconds", 10),
+            overlap_seconds=step.model.settings.get("overlap_seconds", 2),
         )
     if engine == "nemo_cpp":
         if response != "nemo_words":

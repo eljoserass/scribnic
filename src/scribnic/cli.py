@@ -61,6 +61,9 @@ def run_command(
     profile: Annotated[
         bool, typer.Option("--profile", help="Save optional runtime profiles")
     ] = False,
+    realtime: Annotated[
+        bool, typer.Option("--realtime", help="Pace WAV input in a streaming workflow")
+    ] = False,
     verbose: Annotated[
         bool, typer.Option("--verbose", "-v", help="Show diagnostics")
     ] = False,
@@ -78,6 +81,7 @@ def run_command(
                 output=artifact_kind(output.value) if output is not None else None,
                 offline=offline,
                 profile=profile,
+                realtime=realtime,
             )
         if output_format == OutputFormat.json:
             print(json.dumps(result_to_dict(result), ensure_ascii=False))

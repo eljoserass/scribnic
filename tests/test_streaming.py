@@ -5,13 +5,14 @@ import json
 import queue
 import tempfile
 import unittest
+from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import patch
 
 from test_whisper_cpp import FakeServer, prepared_files, write_audio
 
 from scribnic import Transcript
-from scribnic.backends.nemo_streaming import transcribe_stream
+from scribnic.backends.nemo_streaming import transcribe_pcm, transcribe_stream
 from scribnic.backends.openai_transcription import OpenAITranscription
 from scribnic.config import load_workflow
 
@@ -79,6 +80,49 @@ class FakeSocket:
 )
 class StreamingTests(unittest.TestCase):
     """Verify actual protocol ordering without an inference service or model."""
+
+    def test_input_failure_is_propagated_instead_of_returning_partial_text(
+        self,
+    ) -> None:
+        """A failing source wakes the receiver and retains its original exception."""
+        from websockets.exceptions import ConnectionClosed
+
+        class FailedSocket(FakeSocket):
+            """Wake the waiting fake receiver when the sender closes its socket."""
+
+            def close(self) -> None:
+                """Signal closure without acknowledging a successful recording."""
+                self.events.put(None)
+
+            def recv(self, *, timeout: float) -> str:
+                """Raise the same closure exception as a real disconnected socket."""
+                event = self.events.get(timeout=timeout)
+                if event is None:
+                    raise ConnectionClosed(None, None)
+                return json.dumps(event)
+
+        def chunks() -> Iterator[bytes]:
+            """Fail after a complete block, as a failed capture device might."""
+            yield b"\0\0" * 3200
+            raise OSError("capture device failed")
+
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "events.jsonl"
+            with patch("websockets.sync.client.connect", return_value=FailedSocket()):
+                with self.assertRaisesRegex(OSError, "capture device failed"):
+                    transcribe_pcm(
+                        chunks(),
+                        base_url="http://localhost/v1",
+                        language="es",
+                        diarized=True,
+                        timeout_seconds=2,
+                        event_path=log,
+                        api_key="local",
+                    )
+            events = [json.loads(line) for line in log.read_text().splitlines()]
+            self.assertFalse(
+                any(row["type"] == "input_audio_buffer.committed" for row in events)
+            )
 
     def test_asr_workflow_disables_speaker_diarization_in_stream(self) -> None:
         """The ASR-only preset uses a plain transcript and a non-diarized socket."""

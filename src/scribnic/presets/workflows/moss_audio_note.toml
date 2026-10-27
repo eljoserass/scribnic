@@ -1,0 +1,10 @@
+name = "moss_audio_note"
+inputs = ["audio"]
+default_output = "note"
+download_missing = true
+
+[steps.note]
+backend = "moss_audio"
+model = "MOSS-Audio-4B-Thinking-bf16"
+runtime = "moss_audio_torch"
+template = "soap_es_audio"

@@ -33,8 +33,10 @@ en las mediciones de latencia.
 - `nvidia_cpp_streaming` abre una conexión nueva al protocolo específico
   `/v1/audio/transcriptions/realtime`, envía PCM en chunks de 200 ms y finaliza con
   `input_audio_buffer.commit`. Recibe a la vez para evitar bloqueo por respuestas
-  parciales. No introduce esperas de reproducción. No es OpenAI Realtime ni una
-  API pública de captura de micrófono: por ahora la entrada sigue siendo un WAV.
+  parciales. No introduce esperas de reproducción por defecto; `--realtime` permite
+  simular la llegada del WAV a ritmo real. `session.run_stream(...)` recibe también
+  PCM de otra fuente mediante la [API común](streaming.md). No es OpenAI Realtime;
+  la captura física del micrófono pertenece al llamante.
 
 Ambos modos usan el backend `OpenAITranscription`. `backends/nemo_streaming.py`
 es el cliente auxiliar de su protocolo WebSocket, sin carga de modelos ni
@@ -127,7 +129,9 @@ una implementación equivalente al C++. Su código permanece en la historia de G
 
 Se guardan carga, request, RTF, configuración, hashes, PID, respuesta nativa y
 logs. Python y el servidor C++ se muestrean por separado. En streaming se conserva
-también el flujo de eventos recibido. `--profile` declara explícitamente que no
+también el flujo de eventos recibido en JSONL, escrito progresivamente a disco.
+El timeout del cliente mide la espera de eventos del servidor, no la duración total
+de la consulta. `--profile` declara explícitamente que no
 hay captura de operadores C++ mediante Torch; los recursos y spans siguen activos.
 Los servidores externos necesitan su propia instrumentación para medir RAM/CPU.
 

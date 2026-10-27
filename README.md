@@ -4,6 +4,7 @@ Núcleo local de escriba clínico con la misma API para CLI, aplicación y evalu
 Un workflow declara cómo producir una nota desde audio o una transcripción. Incluye
 Whisper.cpp, Nemotron multilingüe + diarizador con NeMo-Speech.cpp, MOSS opcional
 con Transformers o un servicio HTTP existente, y Bonsai mediante llama-server Prism.
+MOSS-Audio opcional permite generar la nota directamente desde audio, sin transcripción.
 
 ## Arquitectura del refactor
 
@@ -30,13 +31,16 @@ flowchart TB
     CONFIG["Workflow TOML<br/>Modelo + variante de pesos + runtime<br/>Backend + parámetros + template"] --> CORE
 
     subgraph execution["Ejecución y artefactos"]
-        AUDIO["Audio WAV"] --> SPEECH["backends/openai_transcription.py<br/>Carga WAV y adapta parámetros / respuesta"]
+        AUDIO["Audio WAV / PCM incremental"] --> SPEECH["backends/openai_transcription.py<br/>HTTP, NeMo WebSocket o ventanas Whisper"]
         SPEECH --> TRANSCRIPT["Transcript o DiarizedTranscript<br/>artifacts.py · datos guardables y reutilizables"]
         TRANSCRIPT --> NOTE["backends/openai_chat.py<br/>Template SOAP + conversación"]
         NOTE --> OUTPUT["Note"]
+        AUDIO --> AUDIO_NOTE["backends/moss_audio.py<br/>MOSS-Audio · Audio → Note offline"]
+        AUDIO_NOTE --> OUTPUT
     end
     CORE --> SPEECH
     CORE --> NOTE
+    CORE --> AUDIO_NOTE
     SUPPLIED["Transcripción suministrada<br/>También permite perturbaciones del evaluador"] --> TRANSCRIPT
 
     subgraph services["Motores de inferencia seleccionados"]
@@ -112,19 +116,24 @@ ffmpeg -i entrada.mp3 -ac 1 -ar 16000 -c:a pcm_s16le consulta.wav
 | `nvidia_cpp_asr_offline` | Solo Nemotron 3.5 ASR Q8_0; transcripción sin hablantes por HTTP | Bonsai / Prism; instalación base |
 | `nvidia_cpp_asr_streaming` | Solo Nemotron 3.5 ASR Q8_0; WAV por WebSocket, sin esperas de tiempo real | Bonsai / Prism; extra `[streaming]` |
 | `whisper_bonsai` / `whisper_bonsai_vad` | Whisper small multilingüe Q8_0, con VAD opcional | Bonsai / Prism; instalación base |
+| `whisper_bonsai_streaming` | El mismo whisper-server residente; ventanas HTTP de 10 s con 2 s de solape | Bonsai / Prism; instalación base |
 | `moss_bonsai` | MOSS local / Transformers | Bonsai / Prism; extra `[moss]` |
 | `moss_bonsai_http` | MOSS local / Transformers | Bonsai en endpoint existente; extra `[moss]` |
 | `moss_bonsai_sglang` | MOSS en SGLang Omni existente | Bonsai / Prism; instalación base del cliente |
 | `bonsai_note` | Entrada de texto | Bonsai / Prism; instalación base |
+| `moss_audio_note` | Audio completo → nota con MOSS-Audio-4B-Thinking BF16 | Extra `[moss-audio]`, sin Bonsai ni transcripción |
 
-Whisper streaming todavía no está integrado: ambos presets Whisper envían el WAV
-completo. Activar VAD no habilita entrada incremental. NVIDIA streaming reproduce
-un WAV por WebSocket; todavía no hay captura pública de micrófono. El objetivo
-futuro es transcribir durante la consulta y generar una sola nota al finalizar.
+Los workflows streaming procesan mientras consumen audio: NVIDIA conserva su estado
+ASR/diarizador por WebSocket y Whisper reconoce ventanas por HTTP. La nota se genera
+al terminar. `--realtime` reproduce el WAV al ritmo de llegada; sin él se procesa
+tan rápido como permita el consumidor. La API Python acepta PCM de otra fuente;
+la captura física del micrófono pertenece al llamante. [Contrato y ejemplos](docs/streaming.md).
 
 ```bash
 # Streaming NVIDIA: solo se añade el pequeño cliente WebSocket.
 uv run --extra streaming scribnic run consulta.wav --workflow nvidia_cpp_streaming
+
+uv run scribnic run consulta.wav --workflow whisper_bonsai_streaming --realtime
 
 # MOSS local: sus dependencias quedan limitadas a esta instalación opcional.
 uv run --extra moss scribnic run consulta.wav --workflow moss_bonsai
@@ -136,8 +145,9 @@ SCRIBNIC_MOSS_BASE_URL=http://127.0.0.1:8000/v1 \
 
 Cada workflow declara los extras que necesita en esta tabla. `setup` prepara pesos
 y motores, no instala paquetes Python dentro del entorno que lo invoca. Una
-instalación de evaluación puede usar `uv sync --locked --all-extras`; el cliente
-médico instala solo los extras seleccionados. El código de proveedores que no se
+instalación de evaluación usa entornos separados para `[moss]` y `[moss-audio]`,
+que requieren versiones incompatibles de Transformers. `--all-extras` no es válido.
+El cliente médico instala solo los extras seleccionados. El código de proveedores que no se
 usan no carga sus bibliotecas. `uv run --no-sync` conserva un entorno ya preparado.
 
 NeMo-Speech.cpp conecta ASR y diarización por atribución temporal de palabras.
@@ -150,6 +160,17 @@ MOSS/SGLang se integra como servicio externo: Scribnic no instala SGLang ni recl
 medir recursos de otro host. Las rutas de MOSS documentadas por sus autores cubren
 CUDA y GPU Intel; no hemos validado MOSS/SGLang en AMD o Mac. La opción Transformers
 local sigue disponible. [MOSS: configuración y límites](docs/moss.md).
+
+MOSS-Audio usa código upstream fijado, Torch 2.9.1 y Transformers 4.57.1 en su extra:
+
+```bash
+UV_PROJECT_ENVIRONMENT=.venv-moss-audio uv run --extra moss-audio \
+  scribnic run consulta.wav --workflow moss_audio_note --profile
+```
+
+La integración MOSS-Audio se comprobó con una instancia reducida aleatoria para
+validar inferencia y profiling; el checkpoint completo y Apple MPS requieren una
+prueba en una máquina con memoria suficiente. Esa comprobación no mide calidad.
 
 ## API Python: carga separada de inferencia
 
@@ -331,7 +352,7 @@ reemplazar el proveedor global del proceso anfitrión.
 ## Desarrollo
 
 ```bash
-uv sync --locked --all-extras
+uv sync --locked --extra moss --extra streaming
 uv run ruff check src tests
 uv run ruff format --check src tests
 uv run python -m unittest discover -s tests -v
