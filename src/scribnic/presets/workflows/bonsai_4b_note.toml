@@ -9,9 +9,9 @@ model = "Ternary-Bonsai-2-4B-PQ2_0"
 runtime = "llama_cpp_prism"
 template = "soap_es"
 
-# Keep the comparison deterministic with the shared SOAP template and token budget.
+# Use Prism's recommended non-thinking sampling profile.
 [steps.note.model_settings]
-temperature = 0.0
+temperature = 0.7
 
 [steps.note.runtime_settings]
 context_size = 8192

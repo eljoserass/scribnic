@@ -120,25 +120,36 @@ temperature = 0.0
 context_size = 8192
 ```
 
-En LFM3 conviene copiar también la tabla `server_options` de su workflow: incluye
-un presupuesto de razonamiento cero y conserva explícitamente las opciones del
-runtime. Los overrides de tablas sustituyen la tabla completa.
+En LFM3 hay que conservar juntos `thinking = true` del workflow y su tabla
+`server_options`, con presupuesto de razonamiento cero. La plantilla deja abierto
+el bloque de protocolo y el servidor lo cierra inmediatamente, sin tokens libres
+de razonamiento. Prefijarlo cerrado produjo un `</think>` huérfano con b11946.
+Los overrides de tablas sustituyen la tabla completa. El cliente sigue rechazando
+etiquetas de pensamiento en el contenido final; no las elimina silenciosamente.
 
 ## Condiciones de comparación y validación
 
-Los nuevos workflows comparten la plantilla `soap_es`, temperatura cero, seed 42,
-thinking desactivado, máximo de 768 tokens de salida y límite de 12,000 caracteres
-de entrada. Fijan 8,192 posiciones de contexto, como la referencia Bonsai. LFM3
-añade `reasoning-budget = 0` en llama-server. El backend existente rechaza notas
-vacías, truncadas o que incluyan etiquetas de pensamiento.
+Los workflows comparten la plantilla `soap_es`, seed 42, máximo de 768 tokens de
+salida y límite de 12,000 caracteres de entrada. Fijan 8,192 posiciones de contexto.
+Qwen conserva temperatura cero en sus workflows de comparación. Bonsai 4B usa
+el perfil sin pensamiento de Prism: temperatura 0.7, top-p 0.8, top-k 20, min-p 0,
+presence penalty 1.5 y repetición 1.0 sobre una ventana de 64 tokens.
+[Perfil oficial de Prism](https://github.com/PrismML-Eng/Bonsai-demo/blob/main/SMALL-MODELS.md).
+
+LFM3 usa temperatura 0.1, top-k 50 y repetición 1.1, según el perfil general del
+autor. Mantiene top-p 1 y min-p 0 como filtros neutros. Su presupuesto cero controla
+la fase de razonamiento, separado del prefijo de la plantilla. El backend rechaza
+notas vacías, truncadas o con etiquetas de pensamiento.
+[Parámetros del modelo](https://huggingface.co/LiquidAI/LFM3-1.7B#inference).
 
 Las variantes de una misma familia mantienen sus ajustes de generación. Qwen y
 Bonsai conservan su perfil de penalizaciones; LFM3 usa el suyo. Para comparar
 familias hay que registrar esos ajustes además del prompt, input y cuantización.
 La configuración efectiva ya se guarda en cada ejecución.
 
-Esta incorporación y la sustitución de fuentes validan resolución de presets y
-contratos sin descargar ni ejecutar los nuevos checkpoints. La calidad, memoria y
-tiempos reales quedan pendientes de evaluación. La existencia de un preset tampoco
-acredita validación en CUDA, Metal o CPU. Para elegir, comparar cifras, dosis,
-intervalos, negaciones, seguimiento y atribución de hechos junto con los recursos.
+Se ejecutaron Bonsai 4B PQ2_0 y LFM3-1.7B Q8_0 sobre la misma referencia textual,
+con Bonsai 2B como control, sin ASR y usando esos perfiles. El detalle está en la
+[evaluación de texto](text_note_evaluation.md). Las otras variantes nuevas siguen
+pendientes de inferencia real. Esa prueba local no valida otras plataformas ni
+establece calidad clínica general. Para elegir, comparar cifras, dosis, intervalos,
+negaciones, seguimiento y atribución de hechos junto con los recursos.

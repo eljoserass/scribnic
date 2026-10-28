@@ -9,9 +9,12 @@ model = "LFM3-1.7B-Q4_K_M"
 runtime = "llama_cpp"
 template = "soap_es"
 
-# Keep the comparison deterministic with the shared SOAP template and token budget.
+# Use Liquid's recommended general sampling profile.
 [steps.note.model_settings]
-temperature = 0.0
+temperature = 0.1
+# Leave the protocol block open for llama.cpp's zero-budget forced close.
+# Prefilling a closed block emits an orphan closing tag in b11946.
+thinking = true
 
 [steps.note.runtime_settings]
 context_size = 8192
