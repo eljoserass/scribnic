@@ -135,6 +135,8 @@ def real_time_factor(
 - Use quantized weights from model authors' organizations or identified organizations;
   exclude personal-account conversions. The official `ggerganov/whisper.cpp`
   distribution is an explicitly approved exception. See `docs/model_sources.md`.
+- Do not introduce Handy weights or the transcribe.cpp runtime. Keep experimental
+  Qwen ASR and Moondream/Photon integrations separate from native preset additions.
 
 - Use dataclasses for configuration and artifacts. Prefer immutable artifacts;
   create explicit copies for transformations.

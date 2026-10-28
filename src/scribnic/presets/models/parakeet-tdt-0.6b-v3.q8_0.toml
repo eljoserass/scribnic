@@ -1,0 +1,17 @@
+# License: CC-BY-4.0. Official NVIDIA GGUF; offline TDT recognition.
+# Source: https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3
+name = "parakeet-tdt-0.6b-v3.q8_0"
+inputs = ["audio"]
+output = "transcript"
+repository = "nvidia/parakeet-tdt-0.6b-v3"
+revision = "541d1f99c6b0c3cd0b11a95167540bb8edefd82b"
+filename = "parakeet-tdt-0.6b-v3.q8_0.gguf"
+sha256 = "e3880d0aaaaf2c308ea2c35016b2b895c423eb3fda924c1b463d1c19b7f4d32e"
+quantization = "Q8_0"
+
+[settings]
+response_schema = "nemo_words"
+# Parakeet detects language; this locale is used by compatible postprocessing.
+language = "es-ES"
+mode = "offline"
+sentence_gap_seconds = 1.0

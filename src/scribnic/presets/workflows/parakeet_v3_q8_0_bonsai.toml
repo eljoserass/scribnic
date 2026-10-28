@@ -1,0 +1,19 @@
+name = "parakeet_v3_q8_0_bonsai"
+inputs = ["audio", "transcript", "diarized_transcript"]
+default_output = "note"
+download_missing = true
+
+[steps.speech]
+backend = "openai_transcription"
+model = "parakeet-tdt-0.6b-v3.q8_0"
+runtime = "nemo_cpp"
+
+[steps.note]
+backend = "openai_chat"
+model = "Ternary-Bonsai-2-2B-PQ2_0"
+runtime = "llama_cpp_prism"
+template = "soap_es"
+source = "speech"
+
+[steps.note.model_settings]
+temperature = 0.0

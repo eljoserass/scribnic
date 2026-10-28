@@ -3,20 +3,24 @@
 Investigación del 28 de octubre de 2026. El criterio del proyecto es conservar la
 información clínica en español y su atribución, con un coste local razonable.
 Un resultado de ASR no demuestra por sí solo que la nota final sea buena.
-Las incorporaciones de esta página son propuestas: no añaden backends ni pesos.
-Se aplica la [política de procedencia](model_sources.md).
+Los [presets nativos](asr_presets.md) incorporan primero Whisper y Parakeet v3
+sobre runtimes existentes. Los demás modelos siguen como propuestas de futuras
+ramas. Se aplica la [política de procedencia](model_sources.md).
 
 ## Lo que ya tenemos
 
 | Modelo | Uso actual | Licencia de los pesos |
 | --- | --- | --- |
 | [Whisper small](https://github.com/openai/whisper#available-models-and-languages), 244M | GGML Q8_0 con whisper.cpp; español, sin diarización propia | MIT; distribución oficial de whisper.cpp aceptada |
+| Whisper tiny, base, medium y turbo Q8_0; large-v3 Q5_0 | Nuevos presets multilingües con VAD, mismo whisper.cpp y backend HTTP | MIT; misma fuente oficial del runtime |
+| Parakeet TDT 0.6B v3 | GGUF Q8_0 oficial de NVIDIA, NeMo-Speech.cpp offline; con o sin diarizador Nemotron | CC BY 4.0 |
 | [Nemotron 3.5 ASR Streaming 0.6B](https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b/tree/1c8deaecc64b91f034d73e08dd8b64625eb3395d) | GGUF Q8_0, español, offline o streaming con estado | OpenMDW-1.1 |
 | [Nemotron 3 Diarization](https://huggingface.co/nvidia/Nemotron-3-Diarization/tree/f667ed73aee57d40cc39428eb768b4fd87a0a29e), unos 99M | GGUF Q8_0; atribución de hasta ocho hablantes junto al ASR | OpenMDW-1.1 |
 | [MOSS-Transcribe-Diarize](https://github.com/OpenMOSS/MOSS-Transcribe-Diarize), 0.9B | Checkpoint BF16, Transformers; texto, tiempos y hablantes conjuntamente | Apache-2.0 |
 
-El NVIDIA actual **no es Parakeet v2 ni v3**. Usa un transductor RNNT multilingüe
-con estado de streaming. El reconocimiento y el diarizador son modelos separados.
+El workflow NVIDIA original usa Nemotron 3.5, un transductor RNNT multilingüe con
+estado de streaming. Los nuevos workflows Parakeet v3 usan otro ASR TDT offline.
+El reconocimiento y el diarizador siguen siendo modelos separados.
 [Contrato e implementación actual](nvidia.md).
 
 MOSS-Transcribe-Diarize tampoco es MOSS-Audio-4B-Thinking. El primero tiene unos
@@ -32,15 +36,15 @@ los pesos seleccionados; la licencia del motor es una pieza independiente.
 
 ## Orden propuesto y trabajo necesario
 
-Para obtener una comparación nueva con poco desarrollo, probar primero Parakeet
-v3. Qwen3-ASR-0.6B tiene más interés como siguiente candidato médico multilingüe.
+La primera entrega añade presets Whisper y Parakeet v3 sin cambiar backends,
+runtimes ni dependencias. Qwen3-ASR-0.6B queda como siguiente integración separada.
 Ultra ofrece resultados públicos prometedores de calidad; Redux interesa por
 memoria y CPU, a cambio de una degradación más clara con ruido. Canary queda detrás
 por el trabajo de integración y por la evidencia médica disponible.
 
 | Candidato | Español y hablantes | Qué habría que cambiar en Scribnic |
 | --- | --- | --- |
-| [Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) | 25 idiomas, incluido español; ASR sin etiquetas de hablante propias | Modelo y workflow TOML sobre NeMo-Speech.cpp v0.2.0, con el GGUF Q8 oficial de NVIDIA; validar contrato offline, idioma y tiempos |
+| [Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) | 25 idiomas, incluido español; ASR sin etiquetas de hablante propias | Integrado mediante TOML sobre NeMo-Speech.cpp v0.2.0, con GGUF Q8 oficial; workflows plain y diarizado |
 | [Qwen3-ASR-0.6B](https://huggingface.co/Qwen/Qwen3-ASR-0.6B) | 30 idiomas y 22 dialectos chinos; sin diarización propia | Reutilizar gestor llama-server; adaptar la petición de audio y la conversión de respuesta ASR, añadir presets y contrato de texto sin tiempos inventados |
 | [Parakeet Ultra](https://huggingface.co/moondream/parakeet-ultra) | 25 idiomas; sin diarización propia | Integrar Photon o convertir y validar sus safetensors, incluido el nuevo cabezal VAD; el conversor `.nemo` actual no lo resuelve directamente |
 | [Parakeet Redux](https://huggingface.co/moondream/parakeet-redux) | Los mismos 25 idiomas; encoder ternario | Integrar el runtime y formato empaquetado del autor; no es sustituir un archivo GGUF en nuestro NeMo actual |
@@ -80,7 +84,7 @@ garantía sobre cualquier conversión de terceros que use sus nombres.
 
 Los tamaños siguientes son decimales y corresponden a archivos, no a RAM de
 inferencia. Se distinguen publicaciones del autor y conversiones de organizaciones.
-No se han añadido ni ejecutado estos nuevos candidatos en Scribnic.
+Parakeet v3 ya tiene preset e inferencia corta local; los demás siguen pendientes.
 
 | Modelo | Fuente y formato comprobados | Tamaño de pesos |
 | --- | --- | ---: |
@@ -120,24 +124,11 @@ es `thrush-ternary-v2`, con cinco valores ternarios por byte y escalas por grupo
 no es el PQ2_0 de Bonsai ni un GGUF Q2 genérico. Las capacidades concretas de cada
 modelo seguirían siendo explícitas.
 
-### Conversiones de otra organización: Handy
-
-La organización [Handy](https://huggingface.co/handy-computer) enlaza su aplicación
-y el proyecto [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).
-Publica conversiones identificadas, distintas de los pesos de Moondream/NVIDIA:
-
-| Conversión de Handy | Q8_0 | Q4_K_M | Motor documentado |
-| --- | ---: | ---: | --- |
-| [Ultra](https://huggingface.co/handy-computer/parakeet-ultra-gguf) | 740 MB | 486 MB | transcribe.cpp |
-| [Canary 1B v2](https://huggingface.co/handy-computer/canary-1b-v2-gguf) | 1.144 GB | 735 MB | transcribe.cpp |
-
-Estos repositorios incluyen licencia CC BY 4.0 y avisos de procedencia. Son
-conversiones de una organización del runtime, no quants oficiales de los autores.
-Su existencia no aprueba automáticamente su catálogo ni acredita calidad clínica.
-No se han incorporado como fuentes de presets. Requerirían integrar y fijar
-transcribe.cpp; sus GGUF no son intercambiables con los del NeMo-Speech.cpp actual.
-Una integración compartida de ese motor podría cubrir Ultra y Canary, con sus
-contratos de tiempos, audio largo y salida revisados por separado.
+Moondream es el autor de Ultra y Redux. Ultra es un postentrenamiento del Parakeet
+de NVIDIA; Redux es la variante ternaria. No confundirlos con
+[Moonshine de Useful Sensors](https://huggingface.co/moonshine-ai/moonshine-tiny),
+que es otra familia de modelos. La ruta considerada para la siguiente rama es
+Photon con los pesos de Moondream. Handy y transcribe.cpp quedan excluidos del plan.
 
 ## Benchmarks relevantes y sus límites
 

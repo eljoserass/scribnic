@@ -23,6 +23,11 @@ cuando el backend lo soporte, o dejar pendiente esa variante. No sustituirlo
 silenciosamente por otra conversión. Para introducir una nueva organización hay
 que revisar su identidad, relación con el modelo, archivos, licencia y runtime.
 
+Por decisión del proyecto, Handy y transcribe.cpp quedan fuera del plan de
+integración. Para Ultra y Redux se contempla una futura rama con Photon y los
+pesos originales de Moondream. Las adiciones de presets nativos se mantienen
+separadas de esas integraciones.
+
 ## Estado del catálogo
 
 | Familia | Publicador de los pesos seleccionados | Decisión |
@@ -30,8 +35,8 @@ que revisar su identidad, relación con el modelo, archivos, licencia y runtime.
 | Qwen3.5 0.8B, 2B y 4B, Q4_K_M / Q8_0 | [Unsloth AI](https://huggingface.co/unsloth) | Seis conversiones de organización, a partir de Qwen; sustituyen las de la cuenta Bartowski |
 | Bonsai 2 2B / 4B, PQ2_0 | [Prism ML](https://huggingface.co/prism-ml) | Pesos de la organización autora; conservar |
 | LFM3-1.7B y LFM3-Audio-2B, incluidos QAD y mmproj | [LiquidAI](https://huggingface.co/LiquidAI) | Pesos de la organización autora; conservar |
-| Nemotron 3.5 ASR y Nemotron 3 Diarization, Q8_0 | [NVIDIA](https://huggingface.co/nvidia) | Pesos de la organización autora; conservar |
-| Whisper small, Q8_0 | Repositorio oficial de whisper.cpp | Conservar como excepción aprobada |
+| Nemotron 3.5 ASR, Nemotron 3 Diarization y Parakeet TDT v3, Q8_0 | [NVIDIA](https://huggingface.co/nvidia) | Pesos de la organización autora; conservar |
+| Whisper tiny, base, small, medium y turbo Q8_0; large-v3 Q5_0 | Repositorio oficial de whisper.cpp | Distribución del runtime como excepción aprobada; ver [presets](asr_presets.md) |
 | Silero VAD, distribución de whisper.cpp | [ggml-org/whisper-vad](https://huggingface.co/ggml-org/whisper-vad) | Organización del runtime; conservar |
 | MOSS-Transcribe-Diarize y MOSS-Audio-4B-Thinking | [OpenMOSS-Team](https://huggingface.co/OpenMOSS-Team) | Checkpoints originales; sin añadir un quant de terceros |
 

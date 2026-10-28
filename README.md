@@ -123,6 +123,8 @@ ffmpeg -i entrada.mp3 -ac 1 -ar 16000 -c:a pcm_s16le consulta.wav
 | `nvidia_cpp_asr_offline` | Solo Nemotron 3.5 ASR Q8_0; transcripción sin hablantes por HTTP | Bonsai / Prism; instalación base |
 | `nvidia_cpp_asr_streaming` | Solo Nemotron 3.5 ASR Q8_0; WAV por WebSocket, sin esperas de tiempo real | Bonsai / Prism; extra `[streaming]` |
 | `whisper_bonsai` / `whisper_bonsai_vad` | Whisper small multilingüe Q8_0, con VAD opcional | Bonsai / Prism; instalación base |
+| [Presets Whisper por tamaño](docs/asr_presets.md) | tiny, base, small, medium y turbo Q8_0; large-v3 Q5_0; con VAD | Bonsai / Prism; instalación base |
+| `parakeet_v3_q8_0_bonsai` / `parakeet_v3_q8_0_diarized_bonsai` | Parakeet v3 Q8_0 offline, con diarizador Nemotron Q8 opcional | Bonsai / Prism; instalación base |
 | `whisper_bonsai_streaming` | El mismo whisper-server residente; ventanas HTTP de 10 s con 2 s de solape | Bonsai / Prism; instalación base |
 | `moss_bonsai` | MOSS local / Transformers | Bonsai / Prism; extra `[moss]` |
 | `moss_bonsai_http` | MOSS local / Transformers | Bonsai en endpoint existente; extra `[moss]` |
@@ -138,7 +140,9 @@ Reutilizan `openai_chat` con `llama_cpp` o `llama_cpp_prism`, sin otras dependen
 [Procedencia y política de pesos cuantizados](docs/model_sources.md).
 
 La investigación de próximos modelos, licencias y benchmarks está en
-[candidatos ASR y audio a nota](docs/asr_models.md). La revisión de
+[candidatos ASR y audio a nota](docs/asr_models.md). Los
+[presets ASR nativos](docs/asr_presets.md) incluyen tamaños y comandos para Whisper
+y Parakeet, usando los runtimes existentes. La revisión de
 [Unsloth y Whisper](docs/model_publishers.md) distingue formatos y publicadores.
 El [mapa de selección de hardware](docs/hardware_selection.md) es una propuesta
 sin implementar; incluye la evidencia de la prueba MOSS BF16 frente a FP32.

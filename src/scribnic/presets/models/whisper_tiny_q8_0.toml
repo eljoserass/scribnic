@@ -1,0 +1,34 @@
+# License: MIT. Multilingual model.
+# Official whisper.cpp distribution; approved creator-account exception.
+# See docs/model_sources.md for the quantized-weight source policy.
+name = "whisper_tiny_q8_0"
+inputs = ["audio"]
+output = "transcript"
+repository = "ggerganov/whisper.cpp"
+revision = "5359861c739e955e79d9a303bcbc70fb988958b1"
+filename = "ggml-tiny-q8_0.bin"
+sha256 = "c2085835d3f50733e2ff6e4b41ae8a2b8d8110461e18821b09a15c40c42d1cca"
+
+quantization = "Q8_0"
+
+[settings]
+response_schema = "whisper_segments"
+language = "es"
+beam_size = 5
+best_of = 5
+temperature = 0.0
+word_timestamps = true
+vad = false
+vad_threshold = 0.5
+vad_min_speech_duration_ms = 250
+vad_min_silence_duration_ms = 100
+vad_speech_pad_ms = 30
+vad_samples_overlap = 0.1
+# Set vad_max_speech_duration_s to limit detected speech spans (not HTTP requests).
+
+[settings.vad_model]
+name = "silero_vad_6_2"
+repository = "ggml-org/whisper-vad"
+revision = "9ffd54a1e1ee413ddf265af9913beaf518d1639b"
+filename = "ggml-silero-v6.2.0.bin"
+sha256 = "2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987"
