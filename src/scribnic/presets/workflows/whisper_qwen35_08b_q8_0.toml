@@ -1,0 +1,25 @@
+name = "whisper_qwen35_08b_q8_0"
+inputs = ["audio", "transcript", "diarized_transcript"]
+default_output = "note"
+download_missing = true
+
+[steps.speech]
+backend = "openai_transcription"
+model = "whisper_small_q8_0"
+runtime = "whisper_cpp"
+
+[steps.speech.model_settings]
+vad = true
+
+[steps.note]
+backend = "openai_chat"
+model = "Qwen3.5-0.8B-Q8_0"
+runtime = "llama_cpp"
+template = "soap_es"
+source = "speech"
+
+[steps.note.model_settings]
+temperature = 0.0
+
+[steps.note.runtime_settings]
+context_size = 8192

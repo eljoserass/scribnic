@@ -53,6 +53,16 @@ anuales para el uso comercial gratuito. Cada modelo conserva su propia licencia.
 
 ## Ejecutar desde texto o un transcript guardado
 
+Para ejecutar Whisper small Q8 con VAD y Qwen3.5-0.8B Q8 en un solo comando:
+
+```bash
+uv run scribnic run consulta.wav --workflow whisper_qwen35_08b_q8_0 \
+  --output-dir runs/whisper-qwen08-q8
+```
+
+El informe queda en `runs/whisper-qwen08-q8/report.html`. Este workflow también
+acepta texto o una transcripción guardada: en ese caso solo ejecuta el paso de nota.
+
 ```bash
 # Descargar y verificar una sola variante, sin cargarla en memoria.
 uv run scribnic setup --workflow qwen35_08b_q4_k_m_note
