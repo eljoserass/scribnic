@@ -9,9 +9,12 @@ según el protocolo declarado; el runtime continúa siendo el mismo servidor res
 | `nvidia_cpp_streaming` | ASR cache-aware + diarización | PCM por WebSocket nativo |
 | `nvidia_cpp_asr_streaming` | El mismo ASR sin diarizador | PCM por WebSocket nativo |
 | `whisper_bonsai_streaming` | Ventanas con solape, encoder recalculado | WAV pequeños por HTTP |
+| `lfm3_audio_note` | Encoder causal y prefill incremental; nota directa | PCM por WebSocket de llama-server |
 
-Los tres producen un transcript final y después una sola nota. `--output transcript`
+Los workflows Whisper y NVIDIA producen un transcript final y después una sola nota. `--output transcript`
 sirve con Whisper y NVIDIA ASR; con NVIDIA diarizado se usa `--output diarized_transcript`.
+LFM3 produce directamente una nota, sin transcript ni actualizaciones de transcripción.
+Su configuración y límites están en [LFM3](lfm3.md).
 
 ```bash
 # Consumir el archivo tan rápido como permita la inferencia.

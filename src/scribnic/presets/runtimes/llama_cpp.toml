@@ -1,0 +1,34 @@
+name = "llama_cpp"
+engine = "llama_cpp"
+
+[settings]
+distribution = "ggml-org/llama.cpp"
+release = "b11946"
+context_size = 32768
+threads = 6
+gpu_layers = "auto"
+startup_timeout = 120
+timeout = 600
+
+[settings.server_options]
+jinja = true
+context-shift = false
+temp = 0.0
+top-k = 50
+top-p = 1.0
+min-p = 0.0
+
+[assets.linux-x86_64]
+url = "https://github.com/ggml-org/llama.cpp/releases/download/b11946/llama-b11946-bin-ubuntu-x64.tar.gz"
+sha256 = "9e44e1a59e971f0de3fbf74fa46355ab48fed7bb51c1c16b56a96c355947f8dd"
+binary = "llama-b11946/llama-server"
+
+[assets.darwin-arm64]
+url = "https://github.com/ggml-org/llama.cpp/releases/download/b11946/llama-b11946-bin-macos-arm64.tar.gz"
+sha256 = "d618da5e7bbb19077f086e6a7e1d77eab55b9bfd481f7531aadada86d13db9ed"
+binary = "llama-b11946/llama-server"
+
+[assets.windows-x86_64]
+url = "https://github.com/ggml-org/llama.cpp/releases/download/b11946/llama-b11946-bin-win-cpu-x64.zip"
+sha256 = "8a702bb07c873b133c56eb3acd92a48d7c5c9ad339c6435eddc5185e46e1a043"
+binary = "llama-server.exe"

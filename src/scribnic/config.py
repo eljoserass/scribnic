@@ -147,12 +147,19 @@ def validate_settings(step: StepConfig) -> None:
     for key in ("vad", "word_timestamps"):
         if key in step.model.settings and type(step.model.settings[key]) is not bool:
             raise ValueError(f"{step.name}.{key} must be true or false.")
+    if step.runtime.engine == "llama_cpp":
+        from .runtimes.llama_cpp import server_arguments
+
+        server_arguments(step.runtime.settings.get("server_options", {}))
     _validate_adapter(step)
 
 
 def _validate_adapter(step: StepConfig) -> None:
     """Reject incompatible protocols, formats and outputs before downloading assets."""
     engine = step.runtime.engine
+    if step.backend == "llama_audio_note":
+        _validate_llama_audio(step)
+        return
     if step.backend == "openai_chat":
         if engine not in {"llama_cpp", "external_endpoint"}:
             raise ValueError("openai_chat needs llama_cpp or external_endpoint.")
@@ -176,6 +183,51 @@ def _validate_adapter(step: StepConfig) -> None:
     if step.backend != "openai_transcription":
         return
     _validate_transcription_adapter(step)
+
+
+def _validate_llama_audio(step: StepConfig) -> None:
+    """Require the configured llama realtime audio-to-note contract and limits."""
+    if (
+        step.runtime.engine != "llama_cpp"
+        or step.model.inputs != ("audio",)
+        or step.model.output != "note"
+        or step.model.settings.get("mode") != "streaming"
+    ):
+        raise ValueError(
+            "llama_audio_note requires llama_cpp and streaming Audio -> Note."
+        )
+    if "mmproj" not in step.companions:
+        raise ValueError("llama_audio_note needs an mmproj companion checkpoint.")
+    if not step.instruction and step.template is None:
+        raise ValueError("Audio note generation needs a note template.")
+    system_prompt = step.model.settings.get("system_prompt")
+    if not isinstance(system_prompt, str) or not system_prompt.strip():
+        raise ValueError("llama_audio_note needs the model's system_prompt setting.")
+    for model in (step.model, step.companions["mmproj"]):
+        if not model.filename or not model.filename.endswith(".gguf"):
+            raise ValueError("llama_audio_note requires GGUF model and mmproj files.")
+    for key in ("max_tokens", "max_audio_seconds", "audio_positions_per_second"):
+        _validate_number(
+            step,
+            key,
+            step.model.settings.get(key),
+            integer=key == "max_tokens",
+            allow_zero=False,
+        )
+    _validate_number(
+        step,
+        "context_size",
+        step.runtime.settings.get("context_size"),
+        integer=True,
+        allow_zero=False,
+    )
+    if (
+        step.runtime.settings.get("server_options", {}).get("context-shift")
+        is not False
+    ):
+        raise ValueError(
+            "llama_audio_note requires server_options.context-shift = false."
+        )
 
 
 def _validate_transcription_adapter(step: StepConfig) -> None:

@@ -180,7 +180,7 @@ class StreamWorkflowTests(unittest.TestCase):
             yield b""
 
         with open_workflow("whisper_bonsai", prepare=False) as session:
-            with self.assertRaisesRegex(ValueError, "streaming transcription"):
+            with self.assertRaisesRegex(ValueError, "streaming audio"):
                 session.run_stream(chunks())
 
     def test_cancelled_recording_closes_partial_wav(self) -> None:

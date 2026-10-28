@@ -18,7 +18,7 @@ class StreamingBackend(Protocol):
     """An optional backend capability consuming one execution-owned PCM source."""
 
     def run_stream(self, source: PCMRecording) -> StepOutput:
-        """Consume the input and return its final transcript artifact."""
+        """Consume the input and return the step's declared final artifact."""
         ...
 
 
@@ -41,10 +41,10 @@ def prepare_recording(
         raise ValueError("Streaming needs a transcript or note output.")
     step = plan[0].step
     if (
-        step.backend != "openai_transcription"
+        step.backend not in {"openai_transcription", "llama_audio_note"}
         or step.model.settings.get("mode") != "streaming"
     ):
-        raise ValueError("The workflow must select a streaming transcription step.")
+        raise ValueError("The workflow must select a streaming audio step.")
     directory = (
         Path(output_dir) if output_dir is not None else cache_directory() / "logs"
     )

@@ -216,7 +216,7 @@ class WorkflowSession:
         on_update: UpdateCallback | None = None,
         cancel: threading.Event | None = None,
     ) -> RunResult:
-        """Consume arriving mono PCM16/16 kHz, then optionally generate one note.
+        """Consume arriving mono PCM16/16 kHz to produce a transcript or note.
 
         The caller owns capture. Recording, diagnostics and model resources use
         the normal execution lifecycle. Updates are replaceable snapshots; they
@@ -227,7 +227,8 @@ class WorkflowSession:
             output: Requested artifact, defaulting to the workflow's note.
             output_dir: Empty results directory; omitted recordings use the cache.
             profile: Export optional operator traces where the runtime supports them.
-            on_update: Receive replaceable transcript snapshots during recognition.
+            on_update: Receive transcript snapshots when recognition produces them.
+                Direct audio-to-note workflows do not publish transcript updates.
             cancel: Request cancellation between blocks; the caller stops its device.
 
         Returns:

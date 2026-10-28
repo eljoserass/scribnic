@@ -1,0 +1,6 @@
+name = "mmproj-LFM3-Audio-2B-Q8_0"
+repository = "LiquidAI/LFM3-Audio-2B-GGUF"
+revision = "fcfae9027c00a6f3f872c48a841cfeb77e2b5a1c"
+filename = "mmproj-LFM3-Audio-2B-Q8_0.gguf"
+sha256 = "26601e904245a85bd8f3cf320a629e897cfc01c1d09369e8b4fd951f13024d3e"
+quantization = "Q8_0"

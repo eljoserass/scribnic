@@ -4,7 +4,8 @@ Núcleo local de escriba clínico con la misma API para CLI, aplicación y evalu
 Un workflow declara cómo producir una nota desde audio o una transcripción. Incluye
 Whisper.cpp, Nemotron multilingüe + diarizador con NeMo-Speech.cpp, MOSS opcional
 con Transformers o un servicio HTTP existente, y Bonsai mediante llama-server Prism.
-MOSS-Audio opcional permite generar la nota directamente desde audio, sin transcripción.
+MOSS-Audio y LFM3-Audio permiten generar la nota directamente desde audio, sin
+transcripción. LFM3 usa llama-server y admite prefill incremental.
 
 ## Arquitectura del refactor
 
@@ -37,10 +38,13 @@ flowchart TB
         NOTE --> OUTPUT["Note"]
         AUDIO --> AUDIO_NOTE["backends/moss_audio.py<br/>MOSS-Audio · Audio → Note offline"]
         AUDIO_NOTE --> OUTPUT
+        AUDIO --> LFM_NOTE["backends/llama_audio_note.py<br/>LFM3 Q4_K_M · prefill incremental → Note"]
+        LFM_NOTE --> OUTPUT
     end
     CORE --> SPEECH
     CORE --> NOTE
     CORE --> AUDIO_NOTE
+    CORE --> LFM_NOTE
     SUPPLIED["Transcripción suministrada<br/>También permite perturbaciones del evaluador"] --> TRANSCRIPT
 
     subgraph services["Motores de inferencia seleccionados"]
@@ -48,17 +52,20 @@ flowchart TB
         NS["nemo-speech serve<br/>Nemotron ASR + diarizador Q8_0"]
         MS["Servicio MOSS existente<br/>SGLang Omni · plataforma compatible"]
         LS["llama-server · distribución Prism<br/>Bonsai PQ2_0"]
+        LFS["llama-server · upstream b11946<br/>LFM3-Audio Q4_K_M + mmproj Q8_0"]
     end
     SPEECH <-->|"API de transcripción"| WS
     SPEECH <-->|"HTTP / protocolo streaming específico"| NS
     SPEECH <-->|"API de transcripción"| MS
     NOTE <-->|"Chat Completions"| LS
+    LFM_NOTE <-->|"WebSocket /v1/realtime"| LFS
 
     MANAGERS["runtimes/<br/>Ciclo de vida común + comandos por motor<br/>Solo administra procesos propios"]
     CORE --> MANAGERS
     MANAGERS -. "arranque / disponibilidad / cierre" .-> WS
     MANAGERS -. "arranque / disponibilidad / cierre" .-> NS
     MANAGERS -. "arranque / disponibilidad / cierre" .-> LS
+    MANAGERS -. "arranque / disponibilidad / cierre" .-> LFS
 
     CORE -. "spans y métricas" .-> OBS["telemetry/<br/>OpenTelemetry · CPU / RSS por proceso"]
     MANAGERS -. "PID, versión y logs" .-> OBS
@@ -122,9 +129,11 @@ ffmpeg -i entrada.mp3 -ac 1 -ar 16000 -c:a pcm_s16le consulta.wav
 | `moss_bonsai_sglang` | MOSS en SGLang Omni existente | Bonsai / Prism; instalación base del cliente |
 | `bonsai_note` | Entrada de texto | Bonsai / Prism; instalación base |
 | `moss_audio_note` | Audio completo → nota con MOSS-Audio-4B-Thinking BF16 | Extra `[moss-audio]`, sin Bonsai ni transcripción |
+| `lfm3_audio_note` | Audio incremental → nota con LFM3-Audio-2B Q4_K_M + mmproj Q8_0 | llama-server upstream; extra `[streaming]`, sin Torch ni transcripción |
 
 Los workflows streaming procesan mientras consumen audio: NVIDIA conserva su estado
-ASR/diarizador por WebSocket y Whisper reconoce ventanas por HTTP. La nota se genera
+ASR/diarizador por WebSocket, Whisper reconoce ventanas por HTTP y LFM3 realiza
+prefill directo del audio. La nota se genera
 al terminar. `--realtime` reproduce el WAV al ritmo de llegada; sin él se procesa
 tan rápido como permita el consumidor. La API Python acepta PCM de otra fuente;
 la captura física del micrófono pertenece al llamante. [Contrato y ejemplos](docs/streaming.md).
@@ -134,6 +143,9 @@ la captura física del micrófono pertenece al llamante. [Contrato y ejemplos](d
 uv run --extra streaming scribnic run consulta.wav --workflow nvidia_cpp_streaming
 
 uv run scribnic run consulta.wav --workflow whisper_bonsai_streaming --realtime
+
+# Nota directa desde audio con LFM3, procesado por fragmentos.
+uv run --extra streaming scribnic run consulta.wav --workflow lfm3_audio_note
 
 # MOSS local: sus dependencias quedan limitadas a esta instalación opcional.
 uv run --extra moss scribnic run consulta.wav --workflow moss_bonsai
@@ -171,6 +183,11 @@ UV_PROJECT_ENVIRONMENT=.venv-moss-audio uv run --extra moss-audio \
 La integración MOSS-Audio se comprobó con una instancia reducida aleatoria para
 validar inferencia y profiling; el checkpoint completo y Apple MPS requieren una
 prueba en una máquina con memoria suficiente. Esa comprobación no mide calidad.
+
+LFM3 utiliza un único backend para WAV y audio en vivo, con una sesión WebSocket
+nueva por consulta. El preset `llama_cpp` fija una versión upstream; Bonsai conserva
+Prism. Las opciones adicionales del ejecutable se configuran mediante
+`runtime_settings.server_options` en TOML. [LFM3: configuración y límites](docs/lfm3.md).
 
 ## API Python: carga separada de inferencia
 

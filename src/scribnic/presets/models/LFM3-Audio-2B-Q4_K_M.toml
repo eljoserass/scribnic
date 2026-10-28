@@ -1,0 +1,17 @@
+name = "LFM3-Audio-2B-Q4_K_M"
+inputs = ["audio"]
+output = "note"
+repository = "LiquidAI/LFM3-Audio-2B-GGUF"
+revision = "fcfae9027c00a6f3f872c48a841cfeb77e2b5a1c"
+filename = "LFM3-Audio-2B-Q4_K_M.gguf"
+sha256 = "9a773289bd321ed879cd3a76545f6aca506e403851a45fb315420aee45625be2"
+quantization = "Q4_K_M"
+
+[settings]
+system_prompt = "Answer questions about the provided audio clip. Base every answer only on what can be heard."
+mode = "streaming"
+max_tokens = 2048
+# Bound each consultation; streaming does not remove the decoder context limit.
+max_audio_seconds = 1200
+# LFM3 frontend: 100 mel frames/second, downsampled eightfold.
+audio_positions_per_second = 12.5
