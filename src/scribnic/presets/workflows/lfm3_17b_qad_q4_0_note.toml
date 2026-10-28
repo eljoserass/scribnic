@@ -1,0 +1,27 @@
+name = "lfm3_17b_qad_q4_0_note"
+inputs = ["transcript", "diarized_transcript"]
+default_output = "note"
+download_missing = true
+
+[steps.note]
+backend = "openai_chat"
+model = "LFM3-1.7B-QAD-Q4_0"
+runtime = "llama_cpp"
+template = "soap_es"
+
+# Keep the comparison deterministic with the shared SOAP template and token budget.
+[steps.note.model_settings]
+temperature = 0.0
+
+[steps.note.runtime_settings]
+context_size = 8192
+
+# Tables replace the runtime preset table, so retain its server options explicitly.
+[steps.note.runtime_settings.server_options]
+jinja = true
+context-shift = false
+temp = 0.0
+top-k = 50
+top-p = 1.0
+min-p = 0.0
+reasoning-budget = 0

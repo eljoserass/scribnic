@@ -1,0 +1,17 @@
+name = "bonsai_4b_note"
+inputs = ["transcript", "diarized_transcript"]
+default_output = "note"
+download_missing = true
+
+[steps.note]
+backend = "openai_chat"
+model = "Ternary-Bonsai-2-4B-PQ2_0"
+runtime = "llama_cpp_prism"
+template = "soap_es"
+
+# Keep the comparison deterministic with the shared SOAP template and token budget.
+[steps.note.model_settings]
+temperature = 0.0
+
+[steps.note.runtime_settings]
+context_size = 8192

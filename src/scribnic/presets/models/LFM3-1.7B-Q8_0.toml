@@ -1,0 +1,23 @@
+# License: LFM Open License v1.0.
+# Source: https://huggingface.co/LiquidAI/LFM3-1.7B-GGUF
+name = "LFM3-1.7B-Q8_0"
+inputs = ["transcript", "diarized_transcript"]
+output = "note"
+repository = "LiquidAI/LFM3-1.7B-GGUF"
+revision = "b3f2ae5d73cd3c91bf40e8ba752c648aa05dffdf"
+filename = "LFM3-1.7B-Q8_0.gguf"
+sha256 = "8f6b24182258205e9e01e21f1f24a1f208c1e8115578825d202ce39976af20b6"
+quantization = "Q8_0"
+
+[settings]
+served_model = "lfm3-1.7b-q8_0"
+thinking = false
+temperature = 0.1
+top_p = 1.0
+top_k = 50
+min_p = 0.0
+repeat_penalty = 1.1
+repeat_last_n = 64
+seed = 42
+max_tokens = 768
+max_input_chars = 12000

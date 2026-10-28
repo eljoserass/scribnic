@@ -1,0 +1,24 @@
+# License: Apache-2.0.
+# Source: https://huggingface.co/prism-ml/Ternary-Bonsai-2-4B-gguf
+name = "Ternary-Bonsai-2-4B-PQ2_0"
+inputs = ["transcript", "diarized_transcript"]
+output = "note"
+repository = "prism-ml/Ternary-Bonsai-2-4B-gguf"
+revision = "8d6557168168f91ea6697a4a49ed2ef622b53adb"
+filename = "Ternary-Bonsai-2-4B-PQ2_0.gguf"
+sha256 = "d406b1e912c0d2a4c124ad10bf38a76ae662fdc4d24b176451403dc7b7f30409"
+quantization = "PQ2_0"
+
+[settings]
+served_model = "ternary-bonsai-2-4b-pq2_0"
+thinking = false
+temperature = 0.7
+top_p = 0.8
+top_k = 20
+min_p = 0.0
+presence_penalty = 1.5
+repeat_penalty = 1.0
+repeat_last_n = 64
+seed = 42
+max_tokens = 768
+max_input_chars = 12000

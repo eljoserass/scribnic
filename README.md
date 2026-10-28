@@ -131,6 +131,11 @@ ffmpeg -i entrada.mp3 -ac 1 -ar 16000 -c:a pcm_s16le consulta.wav
 | `moss_audio_note` | Audio completo → nota con MOSS-Audio-4B-Thinking BF16 | Extra `[moss-audio]`, sin Bonsai ni transcripción |
 | `lfm3_audio_note` | Audio incremental → nota con LFM3-Audio-2B Q4_K_M + mmproj Q8_0 | llama-server upstream; extra `[streaming]`, sin Torch ni transcripción |
 
+También hay workflows de texto → nota para Qwen3.5 de 0.8B, 2B y 4B en Q4_K_M
+y Q8_0, Bonsai 2 4B PQ2_0 y LFM3-1.7B de texto en Q4_K_M, Q8_0 y QAD-Q4_0.
+Reutilizan `openai_chat` con `llama_cpp` o `llama_cpp_prism`, sin otras dependencias.
+[Catálogo, tamaños y comandos para compararlos](docs/note_models.md).
+
 Los workflows streaming procesan mientras consumen audio: NVIDIA conserva su estado
 ASR/diarizador por WebSocket, Whisper reconoce ventanas por HTTP y LFM3 realiza
 prefill directo del audio. La nota se genera

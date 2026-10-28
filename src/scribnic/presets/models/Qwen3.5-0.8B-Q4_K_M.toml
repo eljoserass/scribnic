@@ -1,0 +1,24 @@
+# License: Apache-2.0.
+# Source: https://huggingface.co/bartowski/Qwen_Qwen3.5-0.8B-GGUF
+name = "Qwen3.5-0.8B-Q4_K_M"
+inputs = ["transcript", "diarized_transcript"]
+output = "note"
+repository = "bartowski/Qwen_Qwen3.5-0.8B-GGUF"
+revision = "f36b1ea49a332ede8fe5f389bbf5b3575ef71f48"
+filename = "Qwen_Qwen3.5-0.8B-Q4_K_M.gguf"
+sha256 = "fb044e93939a70469c905781334f5de1e6c8b608ced6cbc8c9249bd4127d9526"
+quantization = "Q4_K_M"
+
+[settings]
+served_model = "qwen3.5-0.8b-q4_k_m"
+thinking = false
+temperature = 0.7
+top_p = 0.8
+top_k = 20
+min_p = 0.0
+presence_penalty = 1.5
+repeat_penalty = 1.0
+repeat_last_n = 64
+seed = 42
+max_tokens = 768
+max_input_chars = 12000
