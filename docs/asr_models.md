@@ -76,6 +76,69 @@ CC BY 4.0 en sus fichas oficiales: permiten uso comercial con las condiciones de
 atribución correspondientes. Estas son licencias de modelos concretos, no una
 garantía sobre cualquier conversión de terceros que use sus nombres.
 
+## Quants publicados y coste de los archivos
+
+Los tamaños siguientes son decimales y corresponden a archivos, no a RAM de
+inferencia. Se distinguen publicaciones del autor y conversiones de organizaciones.
+No se han añadido ni ejecutado estos nuevos candidatos en Scribnic.
+
+| Modelo | Fuente y formato comprobados | Tamaño de pesos |
+| --- | --- | ---: |
+| Parakeet TDT 0.6B v3 | NVIDIA publica GGUF Q8_0 junto al checkpoint original | 714 MB |
+| Parakeet Ultra | Moondream publica safetensors F16, con ciertos tensores F32; sin Q4/Q8 del autor en el repositorio revisado | 1.255 GB |
+| Parakeet Redux | Moondream publica encoder ternario empaquetado, con otros pesos F16; la compresión forma parte de esta variante entrenada | 178 MB |
+| Qwen3-ASR-0.6B | ggml-org publica GGUF Q8_0 de texto y companion de audio Q8_0 | 805 + 214 MB, unos 1.019 GB en total |
+| Canary 1B v2 | NVIDIA publica safetensors F32 y checkpoint NeMo; no se encontró Q4/Q8 del autor | 3.916 GB para safetensors |
+
+Fuentes: [archivos de NVIDIA Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3/tree/main),
+[Ultra](https://huggingface.co/moondream/parakeet-ultra/tree/main),
+[Redux](https://huggingface.co/moondream/parakeet-redux/tree/main),
+[Qwen GGUF](https://huggingface.co/ggml-org/Qwen3-ASR-0.6B-GGUF/tree/main) y
+[Canary](https://huggingface.co/nvidia/canary-1b-v2/tree/main).
+En Qwen, contar solamente el archivo de texto omite el encoder de audio. En
+Canary, el tamaño del paquete NeMo completo tampoco equivale al de sus tensores.
+También hay [Qwen3-ASR-0.6B de cuatro bits en MLX Community](https://huggingface.co/mlx-community/Qwen3-ASR-0.6B-4bit),
+unos 708 MB, con Apache-2.0. Es otra organización y otro formato: requiere MLX en
+Apple Silicon; no lo carga nuestro llama-server ni esta CPU AMD mediante MLX.
+
+### Por qué Ultra requiere trabajo adicional
+
+Ultra mantiene el backbone TDT de Parakeet v3. El obstáculo actual es la ruta de
+carga y ejecución: NeMo-Speech.cpp v0.2.0 espera un GGUF con su esquema y su
+conversor ASR busca `.nemo`, configuración YAML, pesos `.ckpt` y tokenizer NeMo.
+Ultra publica `config.json`, safetensors y tokenizer JSON. No basta cambiar el
+repositorio en un TOML. Además, hay que conservar el cabezal VAD y la segmentación
+que utiliza para audio largo.
+[Conversor fijado de NVIDIA](https://github.com/NVIDIA/NeMo-Speech.cpp/blob/v0.2.0/conversion/source.py).
+
+Eso no obliga a crear un motor completo ni demuestra que el núcleo ASR no pueda
+adaptarse. Las rutas posibles son añadir un conversor compatible y validar las
+diferencias de ejecución, o integrar Photon del autor. Ultra y Redux podrían
+compartir una integración Photon; Redux necesita además sus kernels para pesos
+ternarios empaquetados. Su [formato publicado](https://huggingface.co/moondream/parakeet-redux/blob/main/ternary.json)
+es `thrush-ternary-v2`, con cinco valores ternarios por byte y escalas por grupos;
+no es el PQ2_0 de Bonsai ni un GGUF Q2 genérico. Las capacidades concretas de cada
+modelo seguirían siendo explícitas.
+
+### Conversiones de otra organización: Handy
+
+La organización [Handy](https://huggingface.co/handy-computer) enlaza su aplicación
+y el proyecto [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).
+Publica conversiones identificadas, distintas de los pesos de Moondream/NVIDIA:
+
+| Conversión de Handy | Q8_0 | Q4_K_M | Motor documentado |
+| --- | ---: | ---: | --- |
+| [Ultra](https://huggingface.co/handy-computer/parakeet-ultra-gguf) | 740 MB | 486 MB | transcribe.cpp |
+| [Canary 1B v2](https://huggingface.co/handy-computer/canary-1b-v2-gguf) | 1.144 GB | 735 MB | transcribe.cpp |
+
+Estos repositorios incluyen licencia CC BY 4.0 y avisos de procedencia. Son
+conversiones de una organización del runtime, no quants oficiales de los autores.
+Su existencia no aprueba automáticamente su catálogo ni acredita calidad clínica.
+No se han incorporado como fuentes de presets. Requerirían integrar y fijar
+transcribe.cpp; sus GGUF no son intercambiables con los del NeMo-Speech.cpp actual.
+Una integración compartida de ese motor podría cubrir Ultra y Canary, con sus
+contratos de tiempos, audio largo y salida revisados por separado.
+
 ## Benchmarks relevantes y sus límites
 
 ### Español, reuniones, ruido y grabaciones largas
@@ -141,6 +204,30 @@ Cambiar a un Whisper medium compatible con whisper.cpp sería principalmente añ
 presets y fijar sus archivos oficiales. Aumenta la capacidad y también los recursos;
 la mejora en nuestra nota necesita medición. No inferir RAM solo de los parámetros:
 dependen de pesos, dtype efectivo, contexto, buffers y runtime.
+
+La distribución oficial de **whisper.cpp**, aceptada como fuente en este proyecto,
+publica estas variantes multilingües. Son conversiones del proyecto del runtime,
+no quants publicados por OpenAI. Metadatos de la revisión ya utilizada
+`5359861c739e955e79d9a303bcbc70fb988958b1`:
+
+| Variante | F16 con ciertos tensores F32 | Q8_0 | Q5_0 |
+| --- | ---: | ---: | ---: |
+| small actual | 488 MB | 264 MB | No publicado; hay Q5_1 |
+| medium | 1.534 GB | 823 MB | 539 MB |
+| large-v3-turbo | 1.625 GB | 874 MB | 574 MB |
+| large-v3 | 3.095 GB | No publicado en esta revisión | 1.081 GB |
+
+[Archivos y tamaños del distribuidor oficial](https://huggingface.co/ggerganov/whisper.cpp/tree/5359861c739e955e79d9a303bcbc70fb988958b1).
+Los archivos son `ggml-medium-q8_0.bin`, `ggml-large-v3-turbo-q8_0.bin` y sus
+variantes `q5_0`; para large-v3 está `ggml-large-v3-q5_0.bin`. No llevan `.en`.
+El [descargador de whisper.cpp v1.9.5](https://github.com/ggml-org/whisper.cpp/blob/v1.9.5/models/download-ggml-model.sh)
+ya contempla medium, turbo y esos formatos: no necesitan otro runtime en Scribnic.
+
+Q8 en small ahorra unos 223 MB de archivo frente a F16. El número de parámetros
+no determina por sí solo la degradación por cuantización. Comparar small F16 con
+small Q8 aislaría ese efecto; comparar medium/turbo Q8 con small F16 cambia también
+el modelo. Primero interesan medium Q8 y turbo Q8 como opciones de mayor capacidad,
+manteniendo una referencia F16 si se quiere separar ambas causas.
 
 ## Audio directo a nota
 
