@@ -8,6 +8,9 @@
 - [x] integrar MOSS-Audio-4B-Thinking offline Audio -> Note con source/pesos fijados, extra separado y profiling opcional. Verificada inferencia con instancia reducida aleatoria y arquitectura completa/meta frente al indice del checkpoint.
 - [ ] validar el checkpoint completo de MOSS-Audio y Apple MPS en Mac Studio, y medir calidad de sus notas. No se ejecuto completo en esta WSL de 11 GiB.
 
+
+---
+
 - [ ] verificar modularidad al ejecturar pipeline y que se mantenga su construccion (eg, not pipe.run() but running diarizer, transcriber... separetly)
 - [ ] handle files different than .wav
 - [ ] streaming de audio IN, streaming results OUT
@@ -20,4 +23,14 @@
 - [ ] implement source chain referencing, eg nota dijo A -> presente en esta parte del script, que está timestamped, presente en esta parte del audio
 - [ ] implement saliency detection by visualizing the attention of the note generator 
 - end to end audio to note with something like https://huggingface.co/OpenMOSS-Team/MOSS-Audio-4B-Thinking. if working in streaming fashion, perharps intruct to function call to "save" relevant information for the note or do nothing. to be seen if skipping diarization with degrade perfomance
-- [ ] hacer scribnic serve para dejar modelo en memoria, a lo mejor no hace falta para evals pero si para 
+- [ ] hacer scribnic serve para dejar modelo en memoria, a lo mejor no hace falta para evals pero si para deploy. configurar dentro de model/runtime/backend/workflow si una instnacia se tiene cargada o no
+- [ ] revisar mejor logging de los runtime aparte, agregar opcion de gpu, por ahora default cpu
+- [ ] detectar presencia y ausencia de voz para tratar de empezar/terminar sesion automaticamente. 
+- [ ] definir modelo de storage
+- [ ] https://github.com/OpenMOSS/MOSS-Audio crear inference engine optimizado, tipos de quantizacion. validar quizas primero en mac studio con mas ram que tan bien funciona
+- [ ] implementar con microfono, acutalmente solo simula streaming con .wav
+- [ ] https://huggingface.co/LiquidAI/LFM3-Audio-2B
+- [ ] estimacion de recursos antes de cada fase. chequear disponibles vs expected to use 
+- [ ].. sobre estimacion de recursos, precision de procesamiento y almacenamiento del rocesador target
+- [ ] moondream ultra y el reducido. hay que implementar runtime de photon
+- [ ] actualizar documentacion sobre todo del readme. sglang esta deprecated

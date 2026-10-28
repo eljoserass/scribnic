@@ -7,7 +7,7 @@ con Transformers o un servicio HTTP existente, y Bonsai mediante llama-server Pr
 MOSS-Audio y LFM3-Audio permiten generar la nota directamente desde audio, sin
 transcripción. LFM3 usa llama-server y admite prefill incremental.
 
-## Arquitectura del refactor
+## Arch overview
 
 El workflow selecciona los pasos y sus recursos. Un **modelo** identifica los pesos
 y su precisión; un **backend** adapta una API de inferencia a los artefactos de
