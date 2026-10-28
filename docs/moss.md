@@ -31,6 +31,89 @@ El backend Transformers permite profiling opcional de operadores Torch con
 `--profile`; el cliente HTTP no puede obtener los operadores del proceso remoto.
 Para ello el servicio debe instrumentarse y proporcionar sus propios artefactos.
 
+## Pesos BF16, cómputo en CPU y cuantización
+
+Revisión del 28 de octubre de 2026: OpenMOSS publica MOSS-Transcribe-Diarize
+como modelo de **0.9B**, distinto de MOSS-Audio-4B-Thinking. El snapshot seleccionado
+`704aa4a9c304e8520be88901e0d1960158ef5b15` contiene pesos BF16 y no declara
+`quantization_config`. No se encontró un Q4/Q8 oficial de ese modelo en la
+organización OpenMOSS. Las conversiones de cuentas personales quedan excluidas
+por la [política de procedencia](model_sources.md); no se ha añadido ninguna.
+[Modelo oficial](https://huggingface.co/OpenMOSS-Team/MOSS-Transcribe-Diarize),
+[arquitectura y uso del autor](https://github.com/OpenMOSS/MOSS-Transcribe-Diarize).
+
+El archivo ya descargado ocupa 1,817,113,576 bytes y su cabecera safetensors
+identifica 683 tensores BF16. El preset registra ese formato como `BF16`, separado
+del dtype efectivo que el backend escribe en el resultado.
+
+Actualmente `dtype = "auto"` en este backend elige BF16 en CUDA y FP32 en CPU.
+Por eso nuestra ejecución anterior en CPU amplió los pesos al cargarlos:
+no habíamos descargado otra versión FP32. Sobre 297.891 segundos de `dialogue8`,
+el paso de voz tardó 755.066 segundos con seis hilos y FP32. Ese dato pertenece
+a esa configuración; no mide el rendimiento de BF16 ni de un quant.
+
+El AMD Ryzen AI Max PRO 390 de esta máquina expone `avx512_bf16` a WSL. Torch
+2.14.1+cpu confirma esa capacidad mediante `torch.cpu.get_capabilities()` y tiene
+oneDNN disponible. Se hizo una comparación corta con el mismo checkpoint,
+los primeros 15 segundos de `dialogue8`, seis hilos y SDPA. Cada dtype se ejecutó
+en un proceso independiente, sin warmup y con una sola pasada:
+
+| Medida | BF16 | FP32 |
+| --- | ---: | ---: |
+| Generación, incluido prefill | 13.775 s | 30.521 s |
+| Tiempo hasta primer token dentro de generación | 2.147 s | 4.193 s |
+| Ejecución completa, incluida carga | 21.382 s | 35.874 s |
+| Pico RSS muestreado del proceso Python | 2.412 GB | 5.675 GB |
+| Tokens generados | 180 | 180 |
+
+Los artefactos resultaron idénticos: texto, siete segmentos, hablantes y tiempos.
+Esto comprueba esa ruta de inferencia BF16, pero una muestra de 15 segundos no
+establece equivalencia de calidad ni rendimiento para consultas completas.
+La memoria es RSS muestreado cada 250 ms; no es una medida de pesos solos.
+Los resultados generados, fuera del código versionado, están en
+`runs/moss-cpu-dtype-20261028/{bfloat16,float32}/report.html` y sus `run.json`.
+La [propuesta de selección de cómputo](hardware_selection.md) sigue sin implementar;
+esta prueba no modifica los valores por defecto.
+
+Para solicitar BF16 con la configuración existente, añadir al workflow elegido:
+
+```toml
+[steps.speech.runtime_settings]
+device = "cpu"
+dtype = "bfloat16"
+```
+
+### Qué supondría crear nuestro quant
+
+Partir del checkpoint oficial permite un experimento reproducible sin depender
+de conversiones ajenas. La cuantización posterior al entrenamiento no exige
+reentrenar el modelo por definición; algunos métodos sí necesitan calibración.
+Todavía falta implementar y validar esa ruta en Scribnic.
+
+1. Establecer primero una referencia BF16 con consultas completas. En esta CPU
+   ya funciona y mejora la prueba corta sin convertir los pesos a INT8/INT4.
+2. Elegir un método y kernels compatibles con el dispositivo y las versiones
+   instaladas. Transformers documenta `quantization_config`, por ejemplo mediante
+   bitsandbytes; eso no acredita compatibilidad con este modelo personalizado.
+   Cambiar `dtype` a `int8` no sustituye esas capas ni activa esos kernels.
+   [Guía de Transformers](https://huggingface.co/docs/transformers/quantization/bitsandbytes).
+3. Probar primero ocho bits en el decoder de texto y conservar inicialmente
+   encoder/adaptador en coma flotante. Revisar los módulos realmente convertidos,
+   pesos compartidos, movimiento al dispositivo y dtype de los inputs. El cargador
+   actual y su `.to(device)` deben revisarse según el método seleccionado.
+4. Registrar versión de herramientas, revisión original, módulos, formato de pesos
+   y dtype efectivo. Las dependencias específicas pertenecerían al extra/backend,
+   sin introducir Torch en la instalación base.
+5. Comparar con la referencia sobre el mismo audio español: memoria, latencia,
+   términos médicos, dosis, negaciones, hablantes y timestamps, y después la nota
+   resultante. Probar cuatro bits solo si ocho bits aporta una mejora útil.
+
+Menos bits reducen el almacenamiento de los tensores convertidos. No reducen en
+esa misma proporción activaciones, KV cache ni todo el proceso; tampoco garantizan
+aceleración si faltan kernels eficaces. Exportarlo a GGUF sería otra ruta de
+integración: el llama.cpp fijado no implementa esta arquitectura MOSS. El formato
+del archivo por sí solo no añade su encoder, preprocesado ni decoder al runtime.
+
 ## Hotwords y profiling del servicio
 
 Los hotwords de MOSS son pistas de vocabulario dentro del prompt: pueden incluir

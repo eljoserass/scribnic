@@ -135,6 +135,13 @@ También hay workflows de texto → nota para Qwen3.5 de 0.8B, 2B y 4B en Q4_K_M
 y Q8_0, Bonsai 2 4B PQ2_0 y LFM3-1.7B de texto en Q4_K_M, Q8_0 y QAD-Q4_0.
 Reutilizan `openai_chat` con `llama_cpp` o `llama_cpp_prism`, sin otras dependencias.
 [Catálogo, tamaños y comandos para compararlos](docs/note_models.md).
+[Procedencia y política de pesos cuantizados](docs/model_sources.md).
+
+La investigación de próximos modelos, licencias y benchmarks está en
+[candidatos ASR y audio a nota](docs/asr_models.md). La revisión de
+[Unsloth y Whisper](docs/model_publishers.md) distingue formatos y publicadores.
+El [mapa de selección de hardware](docs/hardware_selection.md) es una propuesta
+sin implementar; incluye la evidencia de la prueba MOSS BF16 frente a FP32.
 
 Los workflows streaming procesan mientras consumen audio: NVIDIA conserva su estado
 ASR/diarizador por WebSocket, Whisper reconoce ventanas por HTTP y LFM3 realiza

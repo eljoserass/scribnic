@@ -1,9 +1,11 @@
+# License: Apache-2.0. Original OpenMOSS checkpoint; no low-bit quantization.
 name = "moss_transcribe_diarize"
 inputs = ["audio"]
 output = "diarized_transcript"
 repository = "OpenMOSS-Team/MOSS-Transcribe-Diarize"
 revision = "704aa4a9c304e8520be88901e0d1960158ef5b15"
 filename = "model-00000-of-00001.safetensors"
+quantization = "BF16"
 
 [settings]
 # TODO(eval): compare medical hotword hints against the default prompt.

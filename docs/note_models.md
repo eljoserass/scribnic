@@ -19,12 +19,12 @@ pesos.
 | Modelo | Formato | Pesos | Workflow |
 | --- | --- | ---: | --- |
 | Bonsai 2 2B, referencia existente | PQ2_0 | 0.52 GB | `bonsai_note` |
-| Qwen3.5-0.8B | Q4_K_M | 0.58 GB | `qwen35_08b_q4_k_m_note` |
-| Qwen3.5-0.8B | Q8_0 | 0.84 GB | `qwen35_08b_q8_0_note` |
-| Qwen3.5-2B | Q4_K_M | 1.40 GB | `qwen35_2b_q4_k_m_note` |
-| Qwen3.5-2B | Q8_0 | 2.08 GB | `qwen35_2b_q8_0_note` |
-| Qwen3.5-4B | Q4_K_M | 3.01 GB | `qwen35_4b_q4_k_m_note` |
-| Qwen3.5-4B | Q8_0 | 4.62 GB | `qwen35_4b_q8_0_note` |
+| Qwen3.5-0.8B | Q4_K_M | 0.53 GB | `qwen35_08b_q4_k_m_note` |
+| Qwen3.5-0.8B | Q8_0 | 0.81 GB | `qwen35_08b_q8_0_note` |
+| Qwen3.5-2B | Q4_K_M | 1.28 GB | `qwen35_2b_q4_k_m_note` |
+| Qwen3.5-2B | Q8_0 | 2.01 GB | `qwen35_2b_q8_0_note` |
+| Qwen3.5-4B | Q4_K_M | 2.74 GB | `qwen35_4b_q4_k_m_note` |
+| Qwen3.5-4B | Q8_0 | 4.48 GB | `qwen35_4b_q8_0_note` |
 | Bonsai 2 4B | PQ2_0 | 1.15 GB | `bonsai_4b_note` |
 | LFM3-1.7B, texto | Q4_K_M | 1.10 GB | `lfm3_17b_q4_k_m_note` |
 | LFM3-1.7B, texto | Q8_0 | 1.85 GB | `lfm3_17b_q8_0_note` |
@@ -37,15 +37,22 @@ ordinario. Los formatos PQ2_0 y Q4_K_M tampoco representan el mismo tipo de peso
 Las nuevas variantes fijan repositorio, revisión y SHA256 del archivo. Las
 fuentes elegidas son:
 
-- Qwen: [0.8B](https://huggingface.co/bartowski/Qwen_Qwen3.5-0.8B-GGUF),
-  [2B](https://huggingface.co/bartowski/Qwen_Qwen3.5-2B-GGUF) y
-  [4B](https://huggingface.co/bartowski/Qwen_Qwen3.5-4B-GGUF), conversiones Bartowski
-  del mismo distribuidor para mantener consistencia entre formatos y tamaños.
+- Qwen: [0.8B](https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF),
+  [2B](https://huggingface.co/unsloth/Qwen3.5-2B-GGUF) y
+  [4B](https://huggingface.co/unsloth/Qwen3.5-4B-GGUF), conversiones publicadas por
+  la organización Unsloth AI a partir de los modelos de Qwen. No son publicaciones
+  de la organización Qwen ni acreditan validación clínica.
 - [Bonsai 2 4B](https://huggingface.co/prism-ml/Ternary-Bonsai-2-4B-gguf), PQ2_0,
   usando los kernels del fork Prism existente.
 - [LFM3-1.7B GGUF](https://huggingface.co/LiquidAI/LFM3-1.7B-GGUF), publicado por
   Liquid. Es el generador de texto; el workflow de audio directo sigue siendo
   [`lfm3_audio_note`](lfm3.md).
+
+La [política de procedencia](model_sources.md) excluye conversiones de cuentas
+personales, con la excepción explícita del repositorio oficial de whisper.cpp.
+La sustitución de las seis variantes Qwen conserva sus nombres y workflows;
+actualiza repositorios, revisiones, archivos y hashes. Las siguientes ejecuciones
+preparan los archivos de Unsloth; los pesos antiguos que haya en caché no se borran.
 
 Qwen y Bonsai declaran Apache-2.0. LFM3 usa
 [LFM Open License v1.0](https://www.liquid.ai/lfm-license), con su umbral de ingresos
@@ -130,8 +137,8 @@ Bonsai conservan su perfil de penalizaciones; LFM3 usa el suyo. Para comparar
 familias hay que registrar esos ajustes además del prompt, input y cuantización.
 La configuración efectiva ya se guarda en cada ejecución.
 
-Esta incorporación valida resolución de presets y contratos sin descargar ni
-ejecutar los nuevos checkpoints. La calidad, memoria y tiempos reales quedan
-pendientes de evaluación. La existencia de un preset tampoco acredita validación
-en CUDA, Metal o CPU. Para elegir, comparar la conservación de cifras, dosis,
+Esta incorporación y la sustitución de fuentes validan resolución de presets y
+contratos sin descargar ni ejecutar los nuevos checkpoints. La calidad, memoria y
+tiempos reales quedan pendientes de evaluación. La existencia de un preset tampoco
+acredita validación en CUDA, Metal o CPU. Para elegir, comparar cifras, dosis,
 intervalos, negaciones, seguimiento y atribución de hechos junto con los recursos.

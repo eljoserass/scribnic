@@ -132,6 +132,9 @@ def real_time_factor(
   their optional libraries. External endpoints are not owned local processes.
 - Identify model variants with their actual weight format/quantization, record
   effective compute dtype separately, and keep runtime distribution/version pins.
+- Use quantized weights from model authors' organizations or identified organizations;
+  exclude personal-account conversions. The official `ggerganov/whisper.cpp`
+  distribution is an explicitly approved exception. See `docs/model_sources.md`.
 
 - Use dataclasses for configuration and artifacts. Prefer immutable artifacts;
   create explicit copies for transformations.

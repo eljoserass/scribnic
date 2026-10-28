@@ -1,3 +1,5 @@
+# Official whisper.cpp distribution; approved creator-account exception.
+# See docs/model_sources.md for the quantized-weight source policy.
 name = "whisper_small_q8_0"
 inputs = ["audio"]
 output = "transcript"

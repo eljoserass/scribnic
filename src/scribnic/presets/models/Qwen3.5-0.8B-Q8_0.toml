@@ -1,12 +1,13 @@
 # License: Apache-2.0.
-# Source: https://huggingface.co/bartowski/Qwen_Qwen3.5-0.8B-GGUF
+# Converted by Unsloth AI from Qwen weights.
+# Source: https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF
 name = "Qwen3.5-0.8B-Q8_0"
 inputs = ["transcript", "diarized_transcript"]
 output = "note"
-repository = "bartowski/Qwen_Qwen3.5-0.8B-GGUF"
-revision = "f36b1ea49a332ede8fe5f389bbf5b3575ef71f48"
-filename = "Qwen_Qwen3.5-0.8B-Q8_0.gguf"
-sha256 = "7182e2362766bb9569209bbc24cf1a4cdfbb8ab161babdb2080c84fa62c08c2f"
+repository = "unsloth/Qwen3.5-0.8B-GGUF"
+revision = "6ab461498e2023f6e3c1baea90a8f0fe38ab64d0"
+filename = "Qwen3.5-0.8B-Q8_0.gguf"
+sha256 = "0ad885ffd4bb022fc4f0d33a3308fa108ef8613159d3b3a67e23abca056b7a6c"
 quantization = "Q8_0"
 
 [settings]
