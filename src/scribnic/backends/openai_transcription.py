@@ -212,7 +212,7 @@ class OpenAITranscription:
             "speech-" + uuid4().hex + ".json", cache=self.prepared.cache
         )
         write_json(path, payload)
-        artifact = self._convert_response(payload, audio_seconds=duration_seconds)
+        artifact = self._convert_response(payload)
         speech_metrics(
             self.step, elapsed_seconds=elapsed, audio_seconds=duration_seconds
         )
@@ -230,22 +230,17 @@ class OpenAITranscription:
             },
         )
 
-    def _convert_response(
-        self, payload: dict, *, audio_seconds: float
-    ) -> Transcript | DiarizedTranscript:
+    def _convert_response(self, payload: dict) -> Transcript | DiarizedTranscript:
         """Apply only the configured provider's transcript and speaker policy."""
         if self.schema == "nemo_words":
             return parse_words(
                 payload,
-                duration_seconds=audio_seconds,
                 diarized=self.diarized,
                 sentence_gap_seconds=float(
                     self.step.model.settings.get("sentence_gap_seconds", 1)
                 ),
             )
-        return parse_segments(
-            payload, duration_seconds=audio_seconds, diarized=self.diarized
-        )
+        return parse_segments(payload, diarized=self.diarized)
 
     def _metadata(
         self,

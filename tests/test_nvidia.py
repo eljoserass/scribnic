@@ -96,9 +96,9 @@ class NvidiaContractTests(unittest.TestCase):
                 {"word": "sí", "start": 0.7, "end": 0.9, "speaker": 2},
             ],
         }
-        result = parse_words(payload, duration_seconds=1, diarized=True)
+        result = parse_words(payload, diarized=True)
         self.assertEqual([s.speaker for s in result.segments], [None, "1", "2"])
-        plain = parse_words(payload, duration_seconds=1, diarized=False)
+        plain = parse_words(payload, diarized=False)
         self.assertIsInstance(plain, Transcript)
         self.assertEqual(plain, result.without_speakers())
 
@@ -110,7 +110,7 @@ class NvidiaContractTests(unittest.TestCase):
                 {"start": 0.5, "end": 1.2, "text": "Sí"},
             ]
         }
-        result = parse_segments(payload, duration_seconds=2, diarized=True)
+        result = parse_segments(payload, diarized=True)
         self.assertEqual([s.speaker for s in result.segments], ["S01", None])
         self.assertEqual(result.segments[0].text, "Hola")
 
