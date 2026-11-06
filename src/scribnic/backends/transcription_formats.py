@@ -4,16 +4,15 @@ import re
 
 from ..artifacts import DiarizedTranscript, SpeakerSegment, TextSegment, Transcript
 
-END_TOLERANCE_SECONDS = 0.5
-
 
 def parse_segments(
-    data: dict, *, duration_seconds: float, diarized: bool = False
+    data: dict, *, diarized: bool = False
 ) -> Transcript | DiarizedTranscript:
     """Preserve segment timestamps and optional MOSS speaker prefixes.
 
-    A half-second endpoint estimation tolerance preserves native output. Missing
-    identities remain unknown; the result format never implies clinical roles.
+    Times are kept as the engine reports them, even past the end of the recording:
+    engines round them, and that is no reason to lose the text. Missing identities
+    remain unknown; the result format never implies clinical roles.
     """
     segments = []
     previous_start = -1.0
@@ -22,8 +21,8 @@ def parse_segments(
             start, end, text = item["start"], item["end"], item["text"]
             if not isinstance(text, str):
                 raise ValueError("Speech returned non-text segment content.")
-            if start < previous_start or end > duration_seconds + END_TOLERANCE_SECONDS:
-                raise ValueError("Speech returned out-of-order or out-of-range times.")
+            if start < previous_start:
+                raise ValueError("Speech returned out-of-order times.")
             previous_start = start
             if not text.strip():
                 continue
@@ -47,7 +46,6 @@ def parse_segments(
 def parse_words(
     data: dict,
     *,
-    duration_seconds: float,
     diarized: bool,
     sentence_gap_seconds: float = 1.0,
 ) -> Transcript | DiarizedTranscript:
@@ -64,8 +62,6 @@ def parse_words(
                 word, speaker, float(row["start"]), float(row["end"])
             )
             previous = segments[-1] if segments else None
-            if current.end > duration_seconds + END_TOLERANCE_SECONDS:
-                raise ValueError("Speech returned timestamps outside the recording.")
             if previous and current.start < previous.start:
                 raise ValueError("Speech returned out-of-order word timestamps.")
             if (

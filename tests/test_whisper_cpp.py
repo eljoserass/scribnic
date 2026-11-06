@@ -83,28 +83,27 @@ def write_audio(root: Path) -> AudioFile:
 
 class WhisperParserTests(unittest.TestCase):
     def test_native_times_are_preserved_without_inventing_speaker_labels(self):
-        transcript = parse_segments(NATIVE, duration_seconds=2)
+        transcript = parse_segments(NATIVE)
         self.assertIsInstance(transcript, Transcript)
         self.assertEqual(transcript.segments[0].start, 0.1)
         self.assertEqual(transcript.segments[-1].end, 1.5)
         self.assertEqual(transcript.segments[0].text, "Tengo tos.")
         self.assertFalse(hasattr(transcript.segments[0], "speaker"))
 
-    def test_invalid_or_out_of_range_output_is_rejected(self):
+    def test_invalid_output_is_rejected(self):
         cases = (
             {},
             {"segments": [{"text": "missing times"}]},
             {"segments": [{"text": "bad", "start": 0.8, "end": 0.1}]},
-            {"segments": [{"text": "bad", "start": 0, "end": 5}]},
         )
         for data in cases:
             with self.subTest(data=data), self.assertRaises(ValueError):
-                parse_segments(data, duration_seconds=2)
+                parse_segments(data)
 
-    def test_small_native_endpoint_overshoot_is_preserved(self):
-        self.assertEqual(
-            parse_segments(NATIVE, duration_seconds=1.391).segments[-1].end, 1.5
-        )
+    def test_times_past_the_recording_keep_the_text(self):
+        data = {"segments": [{"text": " Bye.", "start": 544.0, "end": 545.0}]}
+        segment = parse_segments(data).segments[-1]
+        self.assertEqual((segment.text, segment.end), ("Bye.", 545.0))
 
 
 class WhisperPreparationTests(unittest.TestCase):
