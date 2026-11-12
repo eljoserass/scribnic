@@ -120,7 +120,7 @@ class _Recognition:
         """Recognize one window and publish a replaceable transcript snapshot."""
         duration = len(pcm) / BYTES_PER_SECOND
         payload = self.request(_wav_bytes(pcm))
-        transcript = parse_segments(payload, duration_seconds=duration)
+        transcript = parse_segments(payload)
         current = [
             TextSegment(
                 segment.text, segment.start + start_seconds, segment.end + start_seconds
