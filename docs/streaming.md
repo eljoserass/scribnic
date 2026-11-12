@@ -77,6 +77,8 @@ reconcilia el solape por texto; si no encuentra un anclaje compatible usa su pun
 medio temporal y recorta los intervalos que lo cruzan, conservando el orden de las
 palabras. La política queda registrada en el resultado y los tiempos nativos
 originales permanecen en JSONL. Siempre procesa la última ventana con audio nuevo.
+El transcript final agrupa las palabras en frases cuando hay una pausa mayor que
+`sentence_gap_seconds` (1 s por defecto), igual que NeMo.
 
 Esta estrategia necesita evaluar errores en bordes y repeticiones. No es una
 garantía de texto idéntico a la inferencia offline ni de menor tiempo de cómputo.

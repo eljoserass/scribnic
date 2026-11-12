@@ -12,12 +12,14 @@ from pathlib import Path
 from scribnic import Note, Transcript, open_workflow, wav_chunks
 from scribnic.artifacts import Artifact, StepOutput, TextSegment
 from scribnic.audio_stream import BYTES_PER_SECOND, PCMRecording
+from scribnic.backends.openai_transcription import OpenAITranscription
 from scribnic.backends.whisper_windowed import (
     WindowSettings,
     _merge,
     transcribe_windows,
 )
 from scribnic.config import StepConfig, load_workflow
+from scribnic.downloads import PreparedStep
 
 
 class WindowTests(unittest.TestCase):
@@ -78,7 +80,7 @@ class WindowTests(unittest.TestCase):
         self.assertTrue(all(seconds <= 3 for _, seconds, _ in requests))
         self.assertEqual(requests[-1][:2], (6, 2))
         self.assertEqual(result["text"], " ".join(f"w{index}" for index in range(8)))
-        self.assertEqual(result["segments"][-1]["start"], 7)
+        self.assertEqual(result["words"][-1]["start"], 7)
         self.assertEqual(updates[-1], result["text"])
 
     def test_exact_window_end_does_not_reprocess_overlap_only(self) -> None:
@@ -98,6 +100,31 @@ class WindowTests(unittest.TestCase):
                 event_path=Path(directory) / "events.jsonl",
             )
         self.assertEqual(len(requests), 1)
+
+    def test_windowed_words_become_sentences_split_at_pauses(self) -> None:
+        """A note prompt must not receive one word per line from streaming."""
+        step = load_workflow("whisper_bonsai_streaming").steps[0]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "model.bin").write_bytes(b"fake weights")
+            (root / "whisper-server").write_bytes(b"fake runtime")
+            prepared = PreparedStep(root, root / "model.bin", root / "whisper-server")
+            backend = OpenAITranscription(step, prepared)
+            payload = {
+                "text": "Me duele la cabeza. Desde ayer.",
+                "words": [
+                    {"word": "Me", "start": 0.0, "end": 0.2},
+                    {"word": "duele", "start": 0.3, "end": 0.6},
+                    {"word": "la", "start": 0.7, "end": 0.8},
+                    {"word": "cabeza.", "start": 0.9, "end": 1.3},
+                    {"word": "Desde", "start": 3.0, "end": 3.3},
+                    {"word": "ayer.", "start": 3.4, "end": 3.8},
+                ],
+            }
+            transcript = backend._convert_response(payload)
+        self.assertIsInstance(transcript, Transcript)
+        self.assertEqual(transcript.text, "Me duele la cabeza.\nDesde ayer.")
+        self.assertEqual(transcript.segments[1].start, 3.0)
 
     def test_invalid_geometry_fails_without_consuming_audio(self) -> None:
         """Overlaps must permit forward progress and useful recognition windows."""
