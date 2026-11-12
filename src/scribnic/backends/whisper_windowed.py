@@ -6,7 +6,7 @@ import math
 import re
 import wave
 from collections.abc import Callable, Iterable
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO
 
@@ -165,6 +165,8 @@ def transcribe_windows(
     Each request re-encodes its window; model weights stay in the existing HTTP
     server. The caller owns capture and pacing. The final transcript may grow
     with recording length, while native per-window responses go to JSONL.
+    Returns one entry per word, as overlap reconciliation needs them; grouping
+    them into sentences belongs to response conversion.
     """
     window_bytes = int(settings.window_seconds * SAMPLE_RATE) * 2
     overlap_bytes = int(settings.overlap_seconds * SAMPLE_RATE) * 2
@@ -189,9 +191,13 @@ def transcribe_windows(
         end_seconds = (start + len(buffer)) / BYTES_PER_SECOND
         if buffer and end_seconds > recognition.end + 1 / SAMPLE_RATE:
             recognition.process(bytes(buffer), start_seconds=start / BYTES_PER_SECOND)
+        words = [
+            {"word": segment.text, "start": segment.start, "end": segment.end}
+            for segment in recognition.segments
+        ]
         return {
             "text": recognition.text(),
-            "segments": [asdict(segment) for segment in recognition.segments],
+            "words": words,
             "windowing": {
                 "timestamp_policy": "overlap_anchor_or_midpoint_ownership_clipping",
                 "window_seconds": settings.window_seconds,

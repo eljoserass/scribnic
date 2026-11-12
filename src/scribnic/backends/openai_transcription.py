@@ -231,8 +231,14 @@ class OpenAITranscription:
         )
 
     def _convert_response(self, payload: dict) -> Transcript | DiarizedTranscript:
-        """Apply only the configured provider's transcript and speaker policy."""
-        if self.schema == "nemo_words":
+        """Apply only the configured provider's transcript and speaker policy.
+
+        NeMo and windowed Whisper return single words, grouped into sentences at
+        pauses longer than `sentence_gap_seconds`, so a note prompt never receives
+        one word per line.
+        """
+        windowed = self.step.model.settings.get("mode") == "streaming"
+        if self.schema == "nemo_words" or windowed:
             return parse_words(
                 payload,
                 diarized=self.diarized,
