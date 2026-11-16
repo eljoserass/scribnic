@@ -69,7 +69,7 @@ class GenerationProgress:
             return
         self.next_report = now + self.interval
         self.logger.info(
-            "%s · generando · %d tokens · %.0f s",
+            "%s · generating · %d tokens · %.0f s",
             self.name,
             generated_tokens,
             now - self.started,
@@ -113,15 +113,15 @@ def _progress_processor(stream: TextIO | None) -> "SpanProcessor":
             if parent is not None:
                 attributes = {**(parent.attributes or {}), **attributes}
             speech_label = (
-                "Transcribir y diarizar"
+                "Transcribe and diarize"
                 if attributes.get("scribnic.output.kind") == "diarized_transcript"
-                else "Transcribir"
+                else "Transcribe"
             )
             label = {
-                "scribnic.service.load": "Cargar servicio",
-                "scribnic.model.load": "Cargar modelo",
+                "scribnic.service.load": "Load service",
+                "scribnic.model.load": "Load model",
                 "scribnic.speech.request": speech_label,
-                "scribnic.note.request": "Generar nota",
+                "scribnic.note.request": "Generate note",
             }.get(span.name)
             if self.observer is not None and label is not None:
                 detail = attributes.get("scribnic.model.name", "")

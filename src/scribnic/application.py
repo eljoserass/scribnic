@@ -27,7 +27,7 @@ def setup_workflow(
     workflow: str | Path | WorkflowConfig, *, offline: bool = False
 ) -> None:
     """Populate/check the configured asset cache without loading models into memory."""
-    with phase("Preparar workflow", detail=str(workflow)):
+    with phase("Prepare workflow", detail=str(workflow)):
         with open_workflow(workflow, download=not offline):
             pass
 
@@ -59,7 +59,7 @@ def execute(
     Returns:
         The execution result, including reusable artifacts and their provenance.
     """
-    with phase("Validar entrada y workflow"):
+    with phase("Validate input and workflow"):
         config = load_workflow(workflow)
         validate_workflow(config)
         source = load_artifact(input_path)

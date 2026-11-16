@@ -79,7 +79,7 @@ class MossTranscribeDiarize:
     def _load(self) -> float:
         if self.model is not None:
             return 0.0
-        logging.getLogger(__name__).info("MOSS · cargando runtime y pesos")
+        logging.getLogger(__name__).info("MOSS · loading runtime and weights")
         import torch
         from transformers import AutoModelForCausalLM, AutoProcessor
 
@@ -220,7 +220,7 @@ class MossTranscribeDiarize:
     def _describe_runtime(self, source: AudioFile, threads: int) -> None:
         logger = logging.getLogger(__name__)
         logger.info(
-            "MOSS · audio %.1f s · dispositivo %s · %s · CPU: %d hilos · Torch %s",
+            "MOSS · audio %.1f s · device %s · %s · CPU: %d threads · Torch %s",
             source.duration,
             self.device,
             self.model.dtype,
@@ -228,11 +228,11 @@ class MossTranscribeDiarize:
             self.torch.__version__,
         )
         if self.device.type == "cpu":
-            logger.info(
-                "MOSS · inferencia en CPU; un audio largo puede tardar varios minutos"
-            )
+            logger.info("MOSS · CPU inference; long audio can take several minutes")
             if "+cpu" in str(self.torch.__version__):
-                logger.info("MOSS · este build de PyTorch es CPU; no utiliza la GPU")
+                logger.info(
+                    "MOSS · this PyTorch build is CPU-only; the GPU is not used"
+                )
 
     @staticmethod
     def _progress_criteria(prompt_length: int, progress: GenerationProgress):
@@ -247,7 +247,7 @@ class MossTranscribeDiarize:
 
     def _generate(self, source: AudioFile) -> tuple[str, int, int, dict]:
         logger = logging.getLogger(__name__)
-        logger.info("MOSS · preparando audio")
+        logger.info("MOSS · preparing audio")
         with self.torch.profiler.record_function("moss.frontend"):
             inputs = self._inputs(source)
         prompt_length = int(inputs["attention_mask"][0].sum().item())
@@ -262,7 +262,7 @@ class MossTranscribeDiarize:
         if self.step.runtime.settings.get("cudnn_enabled") is False:
             convolution = self.torch.backends.cudnn.flags(enabled=False)
         progress = GenerationProgress("MOSS")
-        logger.info("MOSS · encoder y prefill · %d tokens de entrada", prompt_length)
+        logger.info("MOSS · encoder and prefill · %d input tokens", prompt_length)
         with convolution, self.torch.inference_mode():
             output = self.model.generate(
                 **inputs,

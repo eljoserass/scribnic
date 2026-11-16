@@ -1,119 +1,111 @@
-# Audio incremental
+# Incremental audio
 
-El paso de voz configura `mode = "streaming"`. El backend selecciona la estrategia
-según el protocolo declarado; el runtime continúa siendo el mismo servidor residente.
-`WorkflowSession` orquesta y guarda artefactos; no implementa ventanas ni WebSocket.
+A speech step opts in with `mode = "streaming"`. The backend picks the strategy from
+the declared protocol; the runtime is the same resident server as offline.
+`WorkflowSession` orchestrates and saves artifacts; it does not implement windows
+or WebSockets.
 
-| Workflow | Procesamiento | Entrada del servicio |
+| Workflow | Processing | Service input |
 | --- | --- | --- |
-| `nvidia_cpp_streaming` | ASR cache-aware + diarización | PCM por WebSocket nativo |
-| `nvidia_cpp_asr_streaming` | El mismo ASR sin diarizador | PCM por WebSocket nativo |
-| `whisper_bonsai_streaming` | Ventanas con solape, encoder recalculado | WAV pequeños por HTTP |
-| `lfm3_audio_note` | Encoder causal y prefill incremental; nota directa | PCM por WebSocket de llama-server |
+| `nvidia_cpp_streaming` | Cache-aware ASR + diarization | PCM over the native WebSocket |
+| `nvidia_cpp_asr_streaming` | Same ASR without the diarizer | PCM over the native WebSocket |
+| `whisper_bonsai_streaming` | Overlapping windows, encoder recomputed | Small WAV files over HTTP |
+| `lfm3_audio_note` | Causal encoder and incremental prefill; direct note | PCM over the llama-server WebSocket |
 
-Los workflows Whisper y NVIDIA producen un transcript final y después una sola nota. `--output transcript`
-sirve con Whisper y NVIDIA ASR; con NVIDIA diarizado se usa `--output diarized_transcript`.
-LFM3 produce directamente una nota, sin transcript ni actualizaciones de transcripción.
-Su configuración y límites están en [LFM3](lfm3.md).
+Whisper and NVIDIA produce one final transcript and then one note. Use
+`--output transcript` with Whisper and NVIDIA ASR, or `--output diarized_transcript`
+with diarized NVIDIA. LFM3 produces a note directly, with no transcript or
+transcript updates; see [LFM3-Audio](lfm3.md).
 
 ```bash
-# Consumir el archivo tan rápido como permita la inferencia.
-uv run scribnic run consulta.wav --workflow whisper_bonsai_streaming
-uv run --extra streaming scribnic run consulta.wav --workflow nvidia_cpp_streaming
+# Consume the file as fast as inference allows.
+uv run scribnic run consultation.wav --workflow whisper_bonsai_streaming
+uv run --extra streaming scribnic run consultation.wav --workflow nvidia_cpp_streaming
 
-# Simular audio que llega durante una consulta, con el mismo pipeline.
-uv run scribnic run consulta.wav --workflow whisper_bonsai_streaming --realtime
-uv run --extra streaming scribnic run consulta.wav --workflow nvidia_cpp_streaming --realtime
+# Simulate audio arriving during a consultation, through the same pipeline.
+uv run scribnic run consultation.wav --workflow whisper_bonsai_streaming --realtime
 ```
 
-## Fuentes y API Python
+## Sources and Python API
 
-`run_stream` recibe un iterable de `bytes`: PCM16 little-endian, mono, 16 kHz,
-con frames completos. La fuente puede reproducir un WAV, leer una cola de captura
-o recibir audio desde otra aplicación. No se instala una biblioteca de micrófono.
-El llamante posee el dispositivo y debe poder detener una fuente bloqueante.
+`run_stream` takes an iterable of `bytes`: PCM16 little-endian, mono, 16 kHz, in
+whole frames. The source can replay a WAV, read a capture queue, or receive audio
+from another application. Scribnic installs no microphone library; the caller owns
+the device and must be able to stop a blocking source.
 
 ```python
 from pathlib import Path
 from scribnic import open_workflow, wav_chunks
 
 with open_workflow("whisper_bonsai_streaming") as session:
+    session.start(output="transcript")  # Load speech before opening the device.
     result = session.run_stream(
-        wav_chunks(Path("consulta.wav"), realtime=True),
-        output_dir="runs/consulta-incremental",
+        wav_chunks(Path("consultation.wav"), realtime=True),
+        output_dir="runs/consultation-incremental",
     )
     print(result.note.text)
 ```
 
-Para separar carga de captura, puede llamarse primero a
-`session.start(output="transcript")` con Whisper, o
-`session.start(output="diarized_transcript")` con NVIDIA diarizado. Así se precarga
-solo el paso de voz antes de abrir el dispositivo; la nota puede cargar después.
+Use `session.start(output="diarized_transcript")` for diarized NVIDIA. Preloading
+only the speech step lets the note generator load later.
 
-`on_update` es un callback opcional con `TranscriptUpdate(text, audio_seconds, final)`.
-Cada actualización sustituye el texto anterior; no se concatena. Whisper puede
-revisar el solape. NVIDIA publica bloques finalizados y conserva los deltas nativos
-en el log, porque su contrato no identifica inequívocamente todas las revisiones.
-`final=True` indica que terminó la entrada, no que se está imprimiendo un token.
+`on_update` is an optional callback receiving
+`TranscriptUpdate(text, audio_seconds, final)`. Each update replaces the previous
+text rather than appending to it. Whisper may revise the overlap. NVIDIA publishes
+finalized blocks and keeps native deltas in the log, because its contract does not
+identify every revision unambiguously. `final=True` means the input ended.
 
-`cancel` acepta un `threading.Event`, comprobado entre bloques de entrada. No fuerza
-el desbloqueo de un dispositivo externo: eso pertenece a la implementación de captura.
-La lectura tiene backpressure del consumidor y no descarta audio silenciosamente.
-Una captura con callback de hardware debe gestionar su propia cola o grabación a
-disco; no puede asumir que Python siempre consumirá al ritmo del dispositivo.
+`cancel` takes a `threading.Event`, checked between input blocks. It cannot unblock
+an external device; that belongs to the capture code. Reading applies consumer
+backpressure and never drops audio silently. A hardware callback must manage its
+own queue or write to disk; it cannot assume Python always keeps pace.
 
-La ejecución guarda un WAV en `runtime/recording-*.wav`, lo incorpora como `AudioFile`
-con duración/hash y reutiliza el almacenamiento, reportes, CPU/RSS y spans habituales.
-También conserva el audio ya recibido si se interrumpe la operación. Sin `output_dir`
-la grabación queda en la caché de diagnósticos. Los artefactos de consultas distintas
-permanecen aislados aunque se reutilicen modelos.
+The run saves `runtime/recording-*.wav`, records it as an `AudioFile` with duration
+and hash, and reuses the usual storage, reports, CPU/RSS sampling, and spans. Audio
+already received is kept if the run is interrupted. Without `output_dir`, the
+recording goes to the diagnostics cache.
 
-## Ventanas de Whisper
+## Whisper windows
 
-El preset configura `window_seconds = 10`, `overlap_seconds = 2`: el avance es 8 s.
-Se pueden sobrescribir en `[steps.speech.model_settings]` de un workflow TOML.
-El cliente solicita tiempos por palabra, ajusta los tiempos al audio original y
-reconcilia el solape por texto; si no encuentra un anclaje compatible usa su punto
-medio temporal y recorta los intervalos que lo cruzan, conservando el orden de las
-palabras. La política queda registrada en el resultado y los tiempos nativos
-originales permanecen en JSONL. Siempre procesa la última ventana con audio nuevo.
+The preset uses `window_seconds = 10` and `overlap_seconds = 2`, so each window
+advances 8 s; override them in `[steps.speech.model_settings]`. The client requests
+per-word timestamps, shifts them to the original audio, and reconciles the overlap
+by text. Without a compatible anchor it uses the temporal midpoint and clips the
+intervals that cross it, keeping word order. The policy is recorded in the result
+and native timestamps stay in the JSONL log. The last window with new audio is
+always processed. The final transcript groups words into sentences at pauses longer
+than `sentence_gap_seconds` (1 s by default), as with NeMo.
 
-Esta estrategia necesita evaluar errores en bordes y repeticiones. No es una
-garantía de texto idéntico a la inferencia offline ni de menor tiempo de cómputo.
-El modelo se mantiene cargado, pero el encoder vuelve a procesar cada ventana.
-El ejemplo oficial `whisper-stream` también usa reconocimiento por ventanas; su
-captura SDL no es necesaria para esta fuente PCM ni convierte al servidor HTTP en
-OpenAI Realtime. No se añade otro ejecutable ni un fork del servidor.
+Boundary errors and repetitions still need evaluation. The result is not
+guaranteed to match offline inference, nor to use less compute: the model stays
+loaded but the encoder reprocesses every window. The official `whisper-stream`
+example also uses windows; its SDL capture is not needed for this PCM source and
+does not turn the HTTP server into OpenAI Realtime.
 
-## NVIDIA y contratos de red
+## NVIDIA and network contracts
 
-NeMo recibe fragmentos de 200 ms y conserva la caché acústica y el diarizador durante
-la conexión. El tamaño de esos fragmentos no es el contexto interno del encoder.
-El cliente envía un único `commit` al finalizar: en v0.2.0 ese evento termina y
-reinicia el estado del reconocimiento y sus hablantes. El endpointing interno puede
-producir finales intermedios sin abrir otra consulta.
+NeMo receives 200 ms chunks and keeps the acoustic cache and diarizer state for the
+connection; chunk size is not the encoder's internal context. The client sends one
+`commit` at the end, which in v0.2.0 finishes and resets recognition and speaker
+state. Internal endpointing can produce intermediate finals without opening a new
+request. The native protocol differs from OpenAI Realtime in session, events, IDs,
+and diarization; see [NVIDIA NeMo](nvidia.md#input-modes).
 
-El protocolo nativo difiere de OpenAI Realtime en sesión, eventos, IDs y diarización.
-Compartimos la API Python y la fuente PCM, conservando adaptadores de protocolo.
-No se implementa un gateway ni un servidor OpenAI Realtime.
+## Memory and measurement
 
-## Memoria y medición
+WAV validation reads in blocks and native events are written to JSONL rather than
+kept in a list. Whisper retains one window of PCM; transcript text and the
+diarizer's internal state can still grow with the consultation. Weights and compute
+buffers stay resident, so total RAM is not constant. Streaming transcription does
+not shrink the note generator's context: for long recordings, request only the
+transcript and evaluate the note separately.
 
-La validación WAV usa bloques y los eventos nativos se escriben a JSONL, sin guardar
-su historial completo en una lista. Whisper retiene una ventana de PCM; la salida
-textual y el estado interno del diarizador sí pueden crecer con la consulta.
-Los pesos y buffers de cómputo permanecen residentes. No se promete RAM total constante.
-El contexto del generador de notas tampoco aumenta por transcribir en streaming:
-para grabaciones largas puede pedirse solo el transcript y evaluar la nota aparte.
+Request time includes waiting for the source. A `--realtime` replay and an
+unpaced one measure different things; label them separately when comparing RTF.
+The CLI records those flags in `telemetry/invocation.json`; a Python application
+must record how it paces its source. Window/event JSONL files and final responses
+are in `runtime/`. Run latency benchmarks without `--profile`.
 
-El tiempo de request incluye la espera de la fuente. Un replay `--realtime` y uno
-sin pausas miden cosas distintas; deben etiquetarse por separado al comparar RTF.
-La CLI conserva esos flags en `telemetry/invocation.json`; una aplicación Python
-debe registrar cómo temporiza su fuente.
-`--profile` conserva CPU/RSS y spans para C++; declara que no hay traza Torch de
-sus operadores. Los JSONL de ventanas/eventos y las respuestas finales quedan en
-`runtime/`. Los benchmarks de latencia deben hacerse sin captura detallada.
-
-Comprobado en WSL/Linux CPU con el mismo WAV de 24 s para NVIDIA diarizado y Whisper,
-ambos seguidos de Bonsai. Esto prueba ejecución y generación de artefactos; calidad,
-captura física y estabilidad durante horas necesitan validación propia.
+Checked on WSL/Linux CPU with the same 24 s WAV for diarized NVIDIA and Whisper,
+both followed by Bonsai. That shows execution and artifact generation; quality,
+physical capture, and hours-long stability need their own validation.

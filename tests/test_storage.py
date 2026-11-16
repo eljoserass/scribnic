@@ -48,7 +48,7 @@ class StorageTests(unittest.TestCase):
                 )
             )
             report = render_workflow_report(result, root)
-        self.assertIn("Profiling de MOSS", report)
+        self.assertIn("MOSS profile", report)
         self.assertIn("&lt;operator&gt;", report)
         self.assertNotIn("<operator>", report)
         self.assertIn("100.0%", report)

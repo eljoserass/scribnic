@@ -180,11 +180,11 @@ class _ProfileWindows:
 
     def flush(self, profiler: "TorchProfiler") -> None:
         """Export one completed window and merge its numeric operator totals."""
-        with phase("Exportar profiling", detail=self.name):
+        with phase("Export profile", detail=self.name):
             started = monotonic()
             name = f"{self.name}-trace-{len(self.traces):04d}.json.gz"
             logging.getLogger(__name__).info(
-                "Profiling %s · exportando bloque %d", self.name, len(self.traces) + 1
+                "Profiling %s · exporting block %d", self.name, len(self.traces) + 1
             )
             self._export_trace(profiler, self.directory / name)
             for event in profiler.key_averages():
@@ -208,7 +208,7 @@ class _ProfileWindows:
             self.export_and_aggregation_seconds += monotonic() - started
             self.save("running")
             logging.getLogger(__name__).info(
-                "Profiling %s · bloque guardado · %.1f s",
+                "Profiling %s · block saved · %.1f s",
                 self.name,
                 monotonic() - started,
             )

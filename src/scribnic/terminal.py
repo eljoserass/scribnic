@@ -123,7 +123,7 @@ class TerminalView:
         """Print the selected workflow and destination without interpreting markup."""
         self.console.print(Text(f"SCRIBNIC · {workflow}", style="bold cyan"))
         if destination is not None:
-            self.console.print(Text(f"Resultados: {destination}", style="dim"))
+            self.console.print(Text(f"Output: {destination}", style="dim"))
 
     def update(self, event: ProgressEvent) -> None:
         """Present a real execution notification, with no dependency on its producer."""
@@ -184,7 +184,7 @@ def present_result(result: RunResult, stream: TextIO) -> None:
             bounds = f"{timestamp(segment.start)} " if segment.start is not None else ""
             lines.append(bounds + prefix + segment.text)
         console.print(
-            Panel(Text("\n".join(lines)), title="Transcripción", border_style="dim")
+            Panel(Text("\n".join(lines)), title="Transcript", border_style="dim")
         )
     if result.note is not None:
-        console.print(Panel(Text(result.note.text), title="Nota", border_style="cyan"))
+        console.print(Panel(Text(result.note.text), title="Note", border_style="cyan"))

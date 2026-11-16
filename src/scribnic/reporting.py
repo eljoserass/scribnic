@@ -20,9 +20,9 @@ def _report_cards(result: RunResult) -> str:
             segment.speaker for segment in transcript.segments if segment.speaker
         }
     values = [
-        (f"{result.elapsed_seconds:.2f} s", "Tiempo total"),
-        (str(segments), "Segmentos"),
-        (str(len(speakers)), "Hablantes con etiqueta"),
+        (f"{result.elapsed_seconds:.2f} s", "Total time"),
+        (str(segments), "Segments"),
+        (str(len(speakers)), "Labeled speakers"),
     ]
     if isinstance(result.source, AudioFile) and result.source.duration is not None:
         values.insert(0, (f"{result.source.duration:.1f} s", "Audio"))
@@ -34,11 +34,11 @@ def _report_cards(result: RunResult) -> str:
 
 def _report_turns(result: RunResult) -> str:
     if result.transcript is None:
-        return '<p class="muted">No hay transcripción disponible.</p>'
+        return '<p class="muted">No transcript available.</p>'
     rows = []
     colors = {}
     for segment in result.transcript.segments:
-        speaker = getattr(segment, "speaker", None) or "Sin etiqueta"
+        speaker = getattr(segment, "speaker", None) or "Unlabeled"
         color = colors.setdefault(speaker, len(colors) % 4)
         bounds = ""
         if segment.start is not None:
@@ -48,7 +48,7 @@ def _report_turns(result: RunResult) -> str:
             f"<strong>{html.escape(speaker)}</strong><time>{bounds}</time></div>"
             f"<p>{html.escape(segment.text)}</p></article>"
         )
-    return "".join(rows) or '<p class="muted">No se detectó voz.</p>'
+    return "".join(rows) or '<p class="muted">No speech detected.</p>'
 
 
 def _report_steps(result: RunResult) -> str:
@@ -83,7 +83,7 @@ def _report_resources(result: RunResult) -> str:
     combined = result.resources.get("peak_sampled_process_rss_sum_bytes")
     if combined is not None:
         rows.append(
-            f"<tr><td>Pico de la suma RSS por muestreo</td>"
+            f"<tr><td>Peak per-sample RSS sum</td>"
             f"<td>{combined / 1024**3:.2f} GiB</td><td>—</td></tr>"
         )
     return "".join(rows)
@@ -102,12 +102,12 @@ def _profile_section(path: Path) -> str:
     title = html.escape(summary.get("name", default_name))
     scope = html.escape(summary.get("scope", "PyTorch operator capture"))
     link = f"profiles/{quote(path.name)}"
-    heading = f'<section class="details"><h2>Profiling de {title}</h2><p>{scope}</p>'
+    heading = f'<section class="details"><h2>{title} profile</h2><p>{scope}</p>'
     if summary.get("status") == "operator_capture_unavailable":
         return heading + (
-            "<p>Recursos y spans disponibles en la telemetría. "
-            "Sin captura de operadores C++; requiere un profiler nativo.</p>"
-            f'<a href="{link}">Cobertura del perfil</a></section>'
+            "<p>Resources and spans are available in telemetry. "
+            "No C++ operator capture; that needs a native profiler.</p>"
+            f'<a href="{link}">Profile coverage</a></section>'
         )
     phases = "".join(
         f"<tr><td>{html.escape(row['name'])}</td><td>{row['calls']}</td>"
@@ -116,19 +116,19 @@ def _profile_section(path: Path) -> str:
     )
     seconds = summary.get("export_and_aggregation_seconds", 0)
     return (
-        heading + '<div class="table"><table><thead><tr><th>Fase</th>'
-        "<th>Llamadas</th><th>CPU inclusivo</th></tr></thead>"
+        heading + '<div class="table"><table><thead><tr><th>Phase</th>'
+        "<th>Calls</th><th>Inclusive CPU</th></tr></thead>"
         f"<tbody>{phases}</tbody></table></div>"
-        "<h3>Operadores con más tiempo propio de CPU</h3>"
-        '<div class="table"><table><thead><tr><th>Operador</th><th>Llamadas</th>'
-        "<th>CPU propio</th><th>Proporción</th><th>Memoria neta</th></tr></thead>"
+        "<h3>Operators with the most self CPU time</h3>"
+        '<div class="table"><table><thead><tr><th>Operator</th><th>Calls</th>'
+        "<th>Self CPU</th><th>Share</th><th>Net memory</th></tr></thead>"
         f"<tbody>{_operator_rows(summary['operators'])}</tbody></table></div>"
-        "<p>Las fases incluyen operaciones anidadas. La memoria neta es el balance "
-        "de asignaciones de tensores observado; los picos RSS se muestran aparte.</p>"
-        f"<p>Exportación y agregación: {seconds:.2f} s, incluidos en el tiempo total. "
-        "El profiling añade overhead; no usarlo como benchmark de velocidad.</p>"
-        f"<p>{len(summary['traces'])} bloques comprimidos, sin omitir pasos. "
-        f'<a href="{link}">Resumen completo y lista de trazas</a>.</p></section>'
+        "<p>Phases include nested operations. Net memory is the observed balance of "
+        "tensor allocations; RSS peaks are shown separately.</p>"
+        f"<p>Export and aggregation: {seconds:.2f} s, included in the total time. "
+        "Profiling adds overhead; do not use it as a speed benchmark.</p>"
+        f"<p>{len(summary['traces'])} compressed blocks, no steps omitted. "
+        f'<a href="{link}">Full summary and trace list</a>.</p></section>'
     )
 
 
@@ -186,10 +186,10 @@ def render_workflow_report(result: RunResult, directory: Path) -> str:
         status=html.escape(result.status),
         started_at=html.escape(result.started_at),
         run_id=result.run_id,
-        trace_id=result.trace_id or "Sin exportador configurado",
+        trace_id=result.trace_id or "No exporter configured",
         cards=_report_cards(result),
         error=error,
-        note=html.escape(result.note.text) if result.note else "Nota pendiente.",
+        note=html.escape(result.note.text) if result.note else "Note pending.",
         audio=audio,
         transcript=_report_turns(result),
         steps=_report_steps(result),
@@ -210,12 +210,12 @@ def timestamp(seconds: float) -> str:
 def print_result(result: RunResult, stream: TextIO) -> None:
     """Present completed artifacts; timestamps/roles are shown only when supplied."""
     if result.transcript is not None:
-        print("\nTRANSCRIPCIÓN\n", file=stream)
+        print("\nTRANSCRIPT\n", file=stream)
         for segment in result.transcript.segments:
             speaker = getattr(segment, "speaker", None)
             label = f"[{speaker}] " if speaker else ""
             bounds = f"{timestamp(segment.start)} " if segment.start is not None else ""
             print(f"{bounds}{label}{segment.text}", file=stream)
     if result.note is not None:
-        print(f"\nNOTA\n\n{result.note.text}", file=stream)
+        print(f"\nNOTE\n\n{result.note.text}", file=stream)
     print(f"\n{result.elapsed_seconds:.2f} s · {result.run_id}", file=stream)

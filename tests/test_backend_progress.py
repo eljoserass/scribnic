@@ -99,9 +99,9 @@ class BackendProgressTests(unittest.TestCase):
                         second = backend.run(write_audio(root))
                     finally:
                         backend.close()
-                action = "Transcribir y diarizar" if backend.diarized else "Transcribir"
+                action = "Transcribe and diarize" if backend.diarized else "Transcribe"
                 self.assert_phases(
-                    events, load="Cargar servicio", action=action, model=step.model.name
+                    events, load="Load service", action=action, model=step.model.name
                 )
                 self.assertEqual(second.metadata["load_seconds"], 0)
                 self.assertEqual(service.starts, 1)
@@ -124,8 +124,8 @@ class BackendProgressTests(unittest.TestCase):
                     backend.close()
             self.assert_phases(
                 events,
-                load="Cargar servicio",
-                action="Generar nota",
+                load="Load service",
+                action="Generate note",
                 model=step.model.name,
             )
             self.assertEqual(second.metadata["load_seconds"], 0)
@@ -173,8 +173,8 @@ class BackendProgressTests(unittest.TestCase):
                 load.assert_called_once()
                 self.assert_phases(
                     events,
-                    load="Cargar modelo",
-                    action="Transcribir y diarizar",
+                    load="Load model",
+                    action="Transcribe and diarize",
                     model=step.model.name,
                 )
                 self.assertEqual(second.metadata["load_seconds"], 0)
