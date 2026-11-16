@@ -1,117 +1,86 @@
-# Comparación de LFM3 texto y Bonsai 4B
+# Text note evaluation: LFM3 vs Bonsai 4B
 
-Evaluación local del 28 de octubre de 2026. Se compara generación de notas, sin
-ejecutar reconocimiento de audio. Es un caso y una ejecución por perfil, con
-revisión cualitativa contra el guion; no una escala clínica validada.
+Local evaluation from 2026-10-28. It compares note generation only, without audio
+recognition: one case and one run per profile, reviewed qualitatively against the
+script. It is not a validated clinical scale.
 
-## Entrada y ejecución
+## Input and method
 
-La fuente es `data/examples/original.json`, con 33 turnos y 5,154 caracteres de
-conversación. Es un JSON de escenario, no un artefacto Scribnic directamente:
-el script temporal extrae los textos y guarda un `Transcript` en
-`runs/text-notes-lfm3-bonsai4b-20261028/inputs/plain.json`. No añade el resumen,
-contexto del escenario, voces ni duraciones estimadas al prompt.
+The source is a scenario JSON with 33 turns and 5,154 characters of conversation. A
+temporary script extracted the turns into a plain `Transcript`, without the
+scenario summary, context, voices, or estimated durations. That same artifact went
+to three text workflows, each in its own session with one `session.run` call;
+`session.start(source_kind="transcript")` measured loading separately. Weights were
+downloaded and verified beforehand, and models ran sequentially on WSL/Linux x86_64
+CPU with six threads.
 
-La comparación principal entrega exactamente ese mismo artefacto a tres
-workflows de texto. Cada modelo tiene su propia sesión y una única llamada a
-`session.run`; `session.start(source_kind="transcript")` mide la carga aparte.
-Solo se ejecuta el paso `note`. Los pesos se descargaron y verificaron antes de
-medir; los modelos se ejecutaron secuencialmente en CPU Linux x86-64/WSL, seis hilos.
+Settings: `soap_es` template, seed 42, context 8192, each author's sampling
+profile (see [note models](note_models.md#comparison-conditions)). The experimental
+limit was 2048 tokens with a 250-word request; every answer finished under 768
+tokens, the preset limit. Neither input nor output was truncated.
 
-Se conserva la plantilla `soap_es`, seed 42 y contexto 8192. Los parámetros de
-muestreo siguen las recomendaciones de cada autor, en lugar de imponer
-temperatura cero a todos. El límite experimental es 2048 tokens, con petición de
-máximo 250 palabras: todas las respuestas terminaron antes de 768 tokens, que sigue
-siendo el límite de los presets. No se cortó la entrada ni la salida.
+## Results
 
-| Perfil | Temperatura | Top-p / top-k | Penalizaciones |
-| --- | ---: | --- | --- |
-| Bonsai 2B y 4B, sin pensamiento | 0.7 | 0.8 / 20 | Presencia 1.5; repetición 1.0; ventana 64; min-p 0 |
-| LFM3-1.7B Q8_0, presupuesto de razonamiento cero | 0.1 | 1.0 / 50 | Repetición 1.1; ventana 64; min-p 0 |
-
-Fuentes: [Prism](https://github.com/PrismML-Eng/Bonsai-demo/blob/main/SMALL-MODELS.md)
-y [LiquidAI](https://huggingface.co/LiquidAI/LFM3-1.7B#inference). El perfil general
-de Liquid especifica temperatura, top-k y repetición; top-p 1 y min-p 0 mantienen
-los filtros adicionales neutros. Son perfiles de uso, no resultados clínicos.
-
-## Resultados principales
-
-| Modelo | Generación, incluida prefill | Carga del servicio | Pico RSS cliente + servidor durante generación | Palabras aproximadas |
+| Model | Generation incl. prefill | Service load | Peak client + server RSS | Approx. words |
 | --- | ---: | ---: | ---: | ---: |
 | Bonsai 2B PQ2_0, control | 9.41 s | 2.22 s | 1.46 GB | 120 |
 | Bonsai 4B PQ2_0 | 26.91 s | 2.37 s | 3.03 GB | 184 |
 | LFM3-1.7B Q8_0 | 30.41 s | 0.63 s | 2.20 GB | 242 |
 
-RSS es una suma muestreada cada 250 ms en la misma pasada, con posibles páginas
-compartidas contadas varias veces. No es RAM física exclusiva. Los tiempos no son
-promedios ni incluyen descargas; las tres peticiones principales tienen cero tokens
-de prompt reutilizados de una generación anterior. Las palabras se cuentan
-aproximadamente por espacios. Formatos, modelos y runtimes difieren: esta comparación
-no aísla el efecto de una cuantización por sí sola.
+RSS is a sum sampled every 250 ms in the same pass and may count shared pages more
+than once. Times are single runs without downloads, with no prompt tokens reused
+from an earlier generation. Formats, models, and runtimes differ, so this does not
+isolate the effect of quantization.
 
-Prefiero provisionalmente **Bonsai 4B como nota de este caso**: mejor síntesis y
-organización que el control 2B, y conserva la advertencia de no dejar el tratamiento
-de golpe. LFM3 cubre más detalles y usa menos RSS observado que Bonsai 4B Q2, pero
-su redacción y algunas instrucciones son menos precisas. Ninguna nota es plenamente
-fiel al guion.
+Provisional preference: **Bonsai 4B for this case**. It synthesizes and organizes
+better than the 2B control and keeps the warning not to stop treatment abruptly.
+LFM3 covers more details and used less observed RSS than Bonsai 4B, but its wording
+and some instructions are less precise. No note is fully faithful to the script.
 
-| Hecho del guion | Bonsai 2B | Bonsai 4B | LFM3 |
+| Fact in the script | Bonsai 2B | Bonsai 4B | LFM3 |
 | --- | --- | --- | --- |
-| Propranolol 40 mg cada 12 horas | Conservado | Conservado | Conservado |
-| Colesterol medido 240 mg/dL | Conservado | Conservado | Conservado |
-| Objetivo de colesterol menor de 200 | Omitido | Omitido | Conservado |
-| Revisión en un mes | Conservada | Conservada | Conservada |
-| Analítica dentro de 15 días | Incluida en un cierre impreciso | Conservada | Conservada |
-| No suspender el medicamento de golpe | Omitido | Conservado | Omitido |
-| Considerar fármaco para colesterol si no mejora en tres meses | Omitido | Omitido | Conservado |
-| Reducción de café: dos tazas diarias una semana, después una diaria | Parcial | Distorsionada | Conservada |
-| Parar inmediatamente ante síntomas durante ejercicio | Omitido | Omitido | Distorsionado |
+| Propranolol 40 mg every 12 hours | Kept | Kept | Kept |
+| Measured cholesterol 240 mg/dL | Kept | Kept | Kept |
+| Cholesterol target below 200 | Omitted | Omitted | Kept |
+| Review in one month | Kept | Kept | Kept |
+| Blood test within 15 days | In an imprecise closing line | Kept | Kept |
+| Do not stop the medication abruptly | Omitted | Kept | Omitted |
+| Consider cholesterol drug if no improvement in three months | Omitted | Omitted | Kept |
+| Coffee: two cups a day for a week, then one | Partial | Distorted | Kept |
+| Stop immediately if symptoms appear during exercise | Omitted | Omitted | Distorted |
 
-Errores relevantes de las notas conservadas:
+Notable errors:
 
-- Bonsai 2B añade una «respuesta favorable al tratamiento farmacológico» cuando
-  este se está iniciando. También introduce una causa metabólica no establecida.
-- Bonsai 4B escribe «de 3-4 a 2 tazas/semana»: cambia la frecuencia del plan de café.
-  Presenta café y tabaco como desencadenantes con más certeza que el guion.
-- LFM3 mezcla la recomendación general de evitar intensidad extrema con la
-  actuación ante palpitaciones, mareo o dolor: no conserva «pare inmediatamente».
-  Omite la retirada no brusca y contiene «Constantes: EPCOTEGRAMO» en Objetivo.
+- Bonsai 2B adds a "favorable response to drug treatment" when treatment is only
+  starting, and introduces an unestablished metabolic cause.
+- Bonsai 4B writes "from 3–4 to 2 cups/week", changing the coffee plan's frequency,
+  and presents coffee and tobacco as triggers with more certainty than the script.
+- LFM3 merges the general advice to avoid extreme intensity with what to do on
+  palpitations, dizziness, or pain, losing "stop immediately". It omits gradual
+  withdrawal and contains "Constantes: EPCOTEGRAMO" in Objective.
 
-## Formato de razonamiento de LFM3
+## LFM3 reasoning format
 
-El primer perfil, `enable_thinking=false` junto a `reasoning-budget=0`, produjo
-un `</think>` huérfano al principio de `message.content` con llama.cpp b11946.
-Las ejecuciones fueron rechazadas por el guard existente. Cambiar únicamente
-`reasoning-format` a `deepseek` no lo resolvió.
+The first profile, `enable_thinking=false` with `reasoning-budget=0`, produced an
+orphan `</think>` at the start of `message.content` with llama.cpp b11946, and the
+existing guard rejected those runs. Changing only `reasoning-format` to `deepseek`
+did not help.
 
-El ajuste validado deja abierto el prefijo de protocolo mediante `thinking=true`
-y conserva `reasoning-budget=0`: el servidor fuerza el cierre inmediato, sin
-tokens libres de razonamiento. La respuesta final llega limpia. No se hace strip
-de etiquetas ni se debilita el guard del cliente. Este ajuste está en los tres
-workflows LFM3 de texto; la inferencia real se comprobó con Q8_0.
+The validated setting leaves the protocol prefix open with `thinking=true` and
+keeps `reasoning-budget=0`: the server forces an immediate close with no free
+reasoning tokens, and the final answer arrives clean. Tags are not stripped and the
+client guard is not weakened. All three LFM3 text workflows use this setting; real
+inference was checked with Q8_0. The behavior comes from the pinned
+[parser](https://github.com/ggml-org/llama.cpp/blob/b11946/common/parsers/qwen3-coder.cpp)
+and [reasoning budget](https://github.com/ggml-org/llama.cpp/blob/b11946/common/reasoning-budget.cpp);
+sampling recommendations were not the cause.
 
-La interacción corresponde al parser y sampler de la versión fijada:
-[parser](https://github.com/ggml-org/llama.cpp/blob/b11946/common/parsers/qwen3-coder.cpp),
-[presupuesto](https://github.com/ggml-org/llama.cpp/blob/b11946/common/reasoning-budget.cpp).
-Las recomendaciones de muestreo mejoran las condiciones de la comparación, pero
-no eran la causa del cierre de protocolo huérfano.
+## Reproduction
 
-## Artefactos y reproducción
-
-El informe conjunto queda en `runs/text-notes-lfm3-bonsai4b-20261028/report.html`.
-Incluye las tres notas principales, métricas, perfiles efectivos, matriz de hechos,
-referencia y enlaces a cada run. `manifest.json` registra hashes de origen y entrada.
-Los intentos iniciales greedy y con etiquetas permanecen como ensayos secundarios;
-no se mezclan con las cifras principales de perfiles recomendados.
-
-El script temporal `.tmp/run_recommended_text_notes.py` usa la API pública, con
-una llamada por modelo. Los runs y sus scripts son artefactos locales, no source.
-La referencia exportada también funciona con la CLI:
+Generated reports, inputs, and the temporary script are local artifacts, not
+source. With an exported plain transcript, the CLI reproduces each run:
 
 ```bash
-uv run scribnic run runs/text-notes-lfm3-bonsai4b-20261028/inputs/plain.json \
-  --workflow bonsai_4b_note --output-dir runs/bonsai4-reference-new
-
-uv run scribnic run runs/text-notes-lfm3-bonsai4b-20261028/inputs/plain.json \
-  --workflow lfm3_17b_q8_0_note --output-dir runs/lfm3-text-reference-new
+uv run scribnic run plain.json --workflow bonsai_4b_note --output-dir runs/bonsai4
+uv run scribnic run plain.json --workflow lfm3_17b_q8_0_note --output-dir runs/lfm3-text
 ```

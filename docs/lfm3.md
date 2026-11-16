@@ -1,36 +1,36 @@
-# LFM3: audio directo a nota
+# LFM3-Audio: audio directly to note
 
-`lfm3_audio_note` genera una nota SOAP en español directamente del audio, sin
-crear un transcript intermedio. Usa `LiquidAI/LFM3-Audio-2B-GGUF` en `Q4_K_M`
-(1,10 GB) y su companion `mmproj` en `Q8_0` (338 MB). Ambos tienen revisión y
-SHA256 fijados. No requiere Torch ni Transformers.
+Backend `llama_audio_note` with runtime preset `llama_cpp`. `lfm3_audio_note`
+generates a Spanish SOAP note directly from audio, without an intermediate
+transcript. It uses `LiquidAI/LFM3-Audio-2B-GGUF` in `Q4_K_M` (1.10 GB) with its
+`mmproj` companion in `Q8_0` (338 MB), both pinned by revision and SHA256. It needs
+no Torch or Transformers.
 
 ```bash
 uv run --extra streaming scribnic setup --workflow lfm3_audio_note
-uv run --extra streaming scribnic run consulta.wav --workflow lfm3_audio_note
+uv run --extra streaming scribnic run consultation.wav --workflow lfm3_audio_note
 
-# Reproducir el WAV al ritmo de la grabación.
-uv run --extra streaming scribnic run consulta.wav --workflow lfm3_audio_note --realtime
+# Replay the WAV at recording pace.
+uv run --extra streaming scribnic run consultation.wav --workflow lfm3_audio_note --realtime
 ```
 
-La CLI imprime la ruta de `report.html`. En el directorio de resultados también
-quedan la nota, la configuración efectiva, la procedencia de ambos checkpoints,
-el log del servidor, los eventos WebSocket en JSONL y la telemetría habitual.
-Los eventos guardados no incluyen los bloques de audio enviados.
+The output directory holds the note, effective configuration, provenance of both
+checkpoints, the server log, WebSocket events as JSONL (without the audio blocks
+sent), and the usual telemetry.
 
-## Recursos y configuración
+## Resources and configuration
 
-El preset `llama_cpp` selecciona upstream `b11946`, que incluye soporte de LFM3
-([#31257](https://github.com/ggml-org/llama.cpp/pull/31257)) y conversación realtime
-([#31269](https://github.com/ggml-org/llama.cpp/pull/31269)). Conserva el gestor
-`LlamaServer` existente. El preset Prism de Bonsai sigue seleccionando su propia
-distribución. No se instalan bindings de llama.cpp en Python.
+The `llama_cpp` preset selects upstream `b11946`, which includes LFM3 support
+([#31257](https://github.com/ggml-org/llama.cpp/pull/31257)) and realtime
+conversation ([#31269](https://github.com/ggml-org/llama.cpp/pull/31269)). It uses
+the existing `LlamaServer` manager; Bonsai keeps its own Prism distribution. No
+llama.cpp Python bindings are installed.
 
-El workflow vincula el companion mediante `[steps.note.companions]`; el runtime
-recibe su ruta verificada con `--mmproj`. Los pesos permanecen cargados durante
-la sesión Python y cada ejecución abre un WebSocket nuevo para aislar consultas.
+The workflow binds the companion in `[steps.note.companions]`; the runtime receives
+its verified path as `--mmproj`. Weights stay loaded for the Python session and
+each run opens a new WebSocket to isolate requests.
 
-Se pueden pasar opciones adicionales del ejecutable en TOML:
+Extra executable options can be passed in TOML:
 
 ```toml
 [steps.note.runtime_settings.server_options]
@@ -42,82 +42,79 @@ top-p = 1.0
 min-p = 0.0
 ```
 
-Las claves son nombres largos de llama-server sin `--`. Un booleano produce
-`--nombre` o `--no-nombre`; un número o string produce una opción con un valor.
-Se pasan como argumentos literales, sin shell. Las tablas de overrides sustituyen
-la tabla del preset completa: incluir las opciones necesarias, especialmente
-`context-shift = false`. Rutas de modelos, host, puerto, alias, contexto y ajustes
-que Scribnic ya gestiona usan sus campos propios y no se pueden sobrescribir aquí.
+Keys are llama-server long option names without `--`. A boolean becomes `--name`
+or `--no-name`; a number or string becomes an option with a value. They are passed
+as literal arguments, never through a shell. An override table replaces the
+preset's whole table, so include every option you need, especially
+`context-shift = false`. Model paths, host, port, alias, context size, and other
+settings Scribnic manages use their own fields and cannot be overridden here.
 
-El muestreo de realtime se configura en el servidor: esta versión no acepta
-temperatura por `session.update`. `max_tokens` pertenece al modelo y se envía como
-`max_output_tokens`. El preset limita cada consulta a 1.200 segundos, con contexto
-32.768. Cambiar estos valores requiere evaluar memoria y calidad de audio largo.
+Realtime sampling is configured on the server: this version does not accept
+temperature through `session.update`. `max_tokens` belongs to the model and is sent
+as `max_output_tokens`. The preset limits each request to 1,200 seconds with a
+32,768 context. Changing these values requires evaluating memory and long-audio
+quality.
 
-## Prefill incremental y límites
+## Incremental prefill and limits
 
-El backend comparte una implementación para `run(AudioFile)` y `run_stream`.
-Envía bloques de audio PCM16 mono a 16 kHz y el servidor procesa encoder y prefill
-mientras llegan. Con un WAV sin `--realtime` los envía tan rápido como permite
-la conexión; con captura en vivo consume el iterable del llamante.
+`run(AudioFile)` and `run_stream` share one implementation. The backend sends PCM16
+mono 16 kHz blocks and the server runs the encoder and prefill as they arrive. A WAV
+without `--realtime` is sent as fast as the connection allows; live capture
+consumes the caller's iterable.
 
-Solo el fin explícito de la entrada hace `commit`, añade la instrucción de la
-plantilla al mismo turno de usuario y solicita una nota. Se usa el mensaje de
-sistema de audio understanding publicado por LiquidAI, fijado en
-`model_settings.system_prompt`. La plantilla SOAP es la petición del usuario;
-usar la plantilla como mensaje de sistema produjo transcripción y repeticiones en
-la prueba real, tanto con HTTP como con WebSocket.
-Una pausa no cierra la consulta. `output_modalities = ["text"]` desactiva la salida de voz.
-No se publican `TranscriptUpdate`: no hay reconocimiento de texto intermedio.
+Only the explicit end of input triggers `commit`, adds the template instruction to
+the same user turn, and requests a note. The system message is LiquidAI's published
+audio-understanding prompt, set in `model_settings.system_prompt`; the SOAP
+template is the user request. Using the template as the system message produced
+transcription and repetition in the real test, over both HTTP and WebSocket. A
+pause does not end the request. `output_modalities = ["text"]` disables voice
+output. No `TranscriptUpdate` is published because there is no intermediate text.
 
 ```python
 from scribnic import open_workflow
 
 with open_workflow("lfm3_audio_note") as session:
-    session.start()  # Cargar antes de empezar la captura.
-    result = session.run_stream(audio_chunks, output_dir="runs/lfm3-consulta")
+    session.start()  # Load before capture begins.
+    result = session.run_stream(audio_chunks, output_dir="runs/lfm3-consultation")
     print(result.note.text)
 ```
 
-El llamante posee la captura y debe poder detener una fuente bloqueante.
-`cancel` acepta un `threading.Event`, comprobado entre bloques y mientras se espera
-la respuesta. La ejecución cierra el socket al cancelar o fallar y conserva el WAV
-ya recibido. El backend no crea hilos emisores ni colas de audio en Python; los
-buffers de transporte aplican backpressure. La cola interna del encoder y el
-contexto del servidor pueden crecer hasta el límite configurado.
+The caller owns capture and must be able to stop a blocking source. `cancel` takes
+a `threading.Event`, checked between blocks and while waiting for the response. The
+run closes the socket on cancel or failure and keeps the WAV received so far. The
+backend creates no sender threads or audio queues in Python; transport buffers
+apply backpressure. The server's encoder queue and context can grow up to the
+configured limit.
 
-El prefill incremental reduce el trabajo pendiente al terminar de hablar; no
-elimina el límite del contexto ni garantiza RAM constante. Se estima el presupuesto
-con las 12,5 posiciones de audio por segundo del frontend y una reserva conservadora
-para el prompt y la nota. El servidor usa `--no-context-shift`. Se rechazan entradas
-que exceden los límites y respuestas vacías, canceladas o que alcanzan el máximo de
-tokens. `b11946` informa `completed` incluso al alcanzar ese máximo, por lo que el
-cliente comprueba también el uso de tokens.
+Incremental prefill reduces pending work when speech ends; it does not remove the
+context limit or guarantee constant RAM. The budget is estimated from the
+frontend's 12.5 audio positions per second plus a conservative reserve for prompt
+and note. The server runs with `--no-context-shift`. Inputs over the limits are
+rejected, as are empty, cancelled, or max-token responses. `b11946` reports
+`completed` even when it hits the maximum, so the client also checks token usage.
 
-Los tiempos de request incluyen espera de la fuente y procesamiento. La métrica
-`first_text_after_response_request_seconds` mide desde la solicitud final hasta
-el primer delta de texto; no equivale al tiempo total de procesamiento.
+Request time includes waiting for the source plus processing.
+`first_text_after_response_request_seconds` measures from the final request to the
+first text delta; it is not total processing time.
 
-## Comprobación local
+## Local check
 
-Comprobado el 28 de octubre de 2026 en WSL/Linux x86_64, CPU y seis hilos,
-con el checkpoint Q4_K_M y el companion Q8_0 fijados por el preset:
+Checked on 2026-10-28 on WSL/Linux x86_64, CPU, six threads, with the pinned
+Q4_K_M checkpoint and Q8_0 companion:
 
-- `consulta.wav`, de 297,891 segundos, produjo una nota en 60,93 segundos totales;
-  el request duró 57,76 segundos y la carga del servicio, 1,92 segundos.
-- Pico de la suma RSS muestreada: 2,96 GB entre cliente y servidor. Esta suma
-  puede contar páginas compartidas varias veces y no mide RAM física exclusiva.
-- Primer texto 0,94 segundos después de solicitar la respuesta. Se enviaron los
-  fragmentos sin temporización de captura; no es una medición de micrófono real.
-- Un fragmento de 24 segundos con `--realtime` produjo nota en 30,40 segundos
-  totales, con primer texto 0,80 segundos después de solicitar la respuesta.
-  Su informe queda en `runs/lfm3-q4-realtime/report.html`.
+- A 297.891 s consultation produced a note in 60.93 s total: 57.76 s request and
+  1.92 s service load.
+- Peak per-sample RSS sum: 2.96 GB across client and server. The sum may count
+  shared pages more than once.
+- First text 0.94 s after requesting the response. Chunks were sent without
+  capture pacing, so this is not a live-microphone measurement.
+- A 24 s clip with `--realtime` produced a note in 30.40 s total, with first text
+  0.80 s after the response request.
 
-El informe local queda en `runs/lfm3-q4-soap/report.html`. La nota se genera, pero
-mezcla tratamiento y recomendaciones en Objetivo y deja un Plan poco informativo;
-esta ejecución no demuestra calidad clínica ni cobertura completa del audio.
-No se han validado diez minutos continuos, GPU, macOS o Windows.
+The note was generated but mixed treatment and recommendations into Objective and
+left an uninformative Plan. This run does not show clinical quality or full audio
+coverage. Ten continuous minutes, GPU, macOS, and Windows have not been validated.
 
-Fuentes: [modelo](https://huggingface.co/LiquidAI/LFM3-Audio-2B),
+Sources: [model](https://huggingface.co/LiquidAI/LFM3-Audio-2B),
 [GGUF](https://huggingface.co/LiquidAI/LFM3-Audio-2B-GGUF),
-[protocolo fijado](https://github.com/ggml-org/llama.cpp/blob/b11946/tools/server/README.md#realtime-conversation).
+[pinned protocol](https://github.com/ggml-org/llama.cpp/blob/b11946/tools/server/README.md#realtime-conversation).

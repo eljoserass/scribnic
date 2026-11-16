@@ -1,151 +1,118 @@
-# NVIDIA: servidor residente y contratos
+# NVIDIA NeMo
 
-Scribnic usa NeMo-Speech.cpp oficial v0.2.0 con dos archivos fijados por revisión
-Hugging Face y SHA256: `nemotron-3.5-asr-streaming-0.6b.q8_0.gguf` y
-`Nemotron-3-Diarization.q8_0.gguf`. El ASR es multilingüe y selecciona `es-ES`.
-El diarizador es Sortformer V3, de ocho hablantes. Q8_0 es el formato de pesos;
-no significa que todas las operaciones o todos los tensores sean enteros de 8 bits.
+Backend `openai_transcription` with runtime preset `nemo_cpp`. Scribnic uses the
+official NeMo-Speech.cpp v0.2.0 release and two GGUF files pinned by Hugging Face
+revision and SHA256: `nemotron-3.5-asr-streaming-0.6b.q8_0.gguf` and
+`Nemotron-3-Diarization.q8_0.gguf`. The ASR is multilingual and selects `es-ES`.
+The diarizer is Sortformer V3 with up to eight speakers. Q8_0 is the weight format;
+it does not mean every tensor or operation runs in 8-bit integers.
 
-## Preparación y ciclo de vida
+The same runtime also serves Parakeet TDT 0.6B v3; see
+[speech presets](asr_presets.md).
+
+## Setup and lifecycle
 
 ```bash
 uv run scribnic setup --workflow nvidia_cpp_offline
-uv run scribnic run consulta.wav --workflow nvidia_cpp_offline
-uv run --extra streaming scribnic run consulta.wav --workflow nvidia_cpp_streaming
+uv run scribnic run consultation.wav --workflow nvidia_cpp_offline
+uv run --extra streaming scribnic run consultation.wav --workflow nvidia_cpp_streaming
 ```
 
-`setup` descarga solo los assets configurados y verifica hashes. No requiere el
-extra antiguo `[nvidia]`, NeMo/PyTorch ni una ruta manual al ejecutable. El runtime
-arranca `nemo-speech serve` en loopback, carga ASR y diarizador una vez y espera
-`/ready`. El gestor reside en `runtimes/nemo_cpp.py`; el cliente y las conversiones
-están en `backends/openai_transcription.py` y `backends/transcription_formats.py`.
+`setup` downloads only the configured assets and verifies hashes; it needs no
+NeMo/PyTorch and no manual path to the executable. The runtime starts
+`nemo-speech serve` on loopback, loads ASR and diarizer once, and waits for
+`/ready`. The manager is `runtimes/nemo_cpp.py`; the client and response conversion
+are in `backends/openai_transcription.py` and `backends/transcription_formats.py`.
 
-Una sesión mantiene los modelos entre requests. Cada archivo tiene su propio
-estado de reconocimiento y etiquetas. Los procesos se cierran al salir, incluso
-si se interrumpe el arranque. Para evaluar: llamar a `session.start()` antes de
-los `session.run(...)`, guardar sus medidas de carga aparte y omitir `--profile`
-en las mediciones de latencia.
+A session keeps the models between requests; each file gets its own recognition
+state and labels. Processes are closed on exit, even if startup is interrupted.
+For evaluation, call `session.start()` before `session.run(...)`, store its load
+measurements separately, and omit `--profile` when measuring latency.
 
-## Dos modos de entrada
+## Input modes
 
-- `nvidia_cpp_offline` sube el WAV a `/v1/audio/transcriptions`, pide `verbose_json`
-  y activa `diarization=true`. Conserva las palabras con tiempos y hablantes.
-- `nvidia_cpp_streaming` abre una conexión nueva al protocolo específico
-  `/v1/audio/transcriptions/realtime`, envía PCM en chunks de 200 ms y finaliza con
-  `input_audio_buffer.commit`. Recibe a la vez para evitar bloqueo por respuestas
-  parciales. No introduce esperas de reproducción por defecto; `--realtime` permite
-  simular la llegada del WAV a ritmo real. `session.run_stream(...)` recibe también
-  PCM de otra fuente mediante la [API común](streaming.md). No es OpenAI Realtime;
-  la captura física del micrófono pertenece al llamante.
+- `nvidia_cpp_offline` uploads the WAV to `/v1/audio/transcriptions`, requests
+  `verbose_json` with `diarization=true`, and keeps words with timestamps and
+  speakers.
+- `nvidia_cpp_streaming` opens a new connection to the protocol-specific
+  `/v1/audio/transcriptions/realtime`, sends PCM in 200 ms chunks, and finishes with
+  `input_audio_buffer.commit`. It receives concurrently to avoid blocking on partial
+  responses. There is no playback pacing unless `--realtime` is given.
+  `session.run_stream(...)` also accepts PCM from other sources through the
+  [common API](streaming.md).
 
-Ambos modos usan el backend `OpenAITranscription`. `backends/nemo_streaming.py`
-es el cliente auxiliar de su protocolo WebSocket, sin carga de modelos ni
-planificación de etapas. La compatibilidad HTTP no implica compatibilidad Realtime.
+Both modes use `OpenAITranscription`. `backends/nemo_streaming.py` is a small client
+for the WebSocket protocol, with no model loading or step planning. HTTP
+compatibility does not imply Realtime compatibility. OpenAI's documentation uses
+"streaming" for two different contracts:
 
-La [documentación oficial de OpenAI](https://developers.openai.com/api/docs/guides/transcription)
-distingue dos significados de streaming:
-
-| Contrato | Entrada y salida | Compatibilidad actual de Scribnic con NVIDIA |
+| Contract | Input and output | Scribnic support for NVIDIA |
 | --- | --- | --- |
-| Transcriptions HTTP, `stream=true` | Se sube una grabación; el texto llega por eventos SSE | No está conectado; el modo offline pide una respuesta final |
-| OpenAI Realtime transcription | Audio incremental mediante una sesión persistente | No está implementado como cliente/proxy de NVIDIA |
-| NeMo-Speech.cpp WebSocket | PCM incremental y eventos del protocolo propio de NVIDIA | Implementado por `nemo_streaming.py` dentro del backend compartido |
+| Transcriptions HTTP, `stream=true` | Upload a recording; text arrives as SSE events | Not wired; offline mode asks for one final response |
+| OpenAI Realtime transcription | Incremental audio over a persistent session | Not implemented as a client or proxy |
+| NeMo-Speech.cpp WebSocket | Incremental PCM and NVIDIA's own events | Implemented by `nemo_streaming.py` inside the shared backend |
 
-OpenAI Realtime y NeMo comparten algunos nombres de eventos, pero difieren en URL,
-configuración de sesión y metadatos. NeMo admite PCM binario o JSON con base64;
-Scribnic usa PCM binario. No basta con cambiar `base_url` en el SDK de OpenAI.
-Un adaptador de protocolos o compatibilidad implementada en el servidor podría
-unificarlos más adelante. Mantener el pequeño cliente específico evita introducir
-ahora un proxy y preserva timestamps y atribución de hablantes de NeMo.
+OpenAI Realtime and NeMo share some event names but differ in URL, session
+configuration, and metadata. NeMo accepts binary PCM or base64 JSON; Scribnic sends
+binary PCM. Changing `base_url` in the OpenAI SDK is not enough. A protocol adapter
+could unify them later; the small dedicated client avoids a proxy and keeps NeMo's
+timestamps and speaker attribution.
 
-Fuentes: [OpenAI: archivos y salida streaming](https://developers.openai.com/api/docs/guides/speech-to-text),
-[OpenAI: entrada Realtime](https://developers.openai.com/api/docs/guides/realtime-transcription),
-[NeMo v0.2.0: protocolo propio](https://github.com/NVIDIA/NeMo-Speech.cpp/blob/v0.2.0/docs/api.md).
+Sources: [OpenAI files and streamed output](https://developers.openai.com/api/docs/guides/speech-to-text),
+[OpenAI Realtime input](https://developers.openai.com/api/docs/guides/realtime-transcription),
+[NeMo v0.2.0 protocol](https://github.com/NVIDIA/NeMo-Speech.cpp/blob/v0.2.0/docs/api.md).
 
-La salida pública es `DiarizedTranscript`. El texto puede proyectarse mediante
-`without_speakers()` para ablations; la nota acepta ambos tipos. El cliente nunca
-inventa roles clínicos a partir del número de hablante.
+The public output is `DiarizedTranscript`. The note step accepts it or its
+`without_speakers()` projection. The client never infers clinical roles from
+speaker numbers.
 
-## Variantes sin diarización
+## Variants without diarization
 
-`nvidia_cpp_asr_offline` y `nvidia_cpp_asr_streaming` usan el mismo ASR multilingüe,
-runtime y generador de notas, sin declarar ni preparar el diarizador. El servidor
-arranca solo con ASR; la petición HTTP usa `diarization=false` y la sesión WebSocket
-usa `speaker_diarization=false`. Producen `Transcript` con tiempos y sin hablantes;
-la nota se genera a partir de ese texto. Los recursos ya presentes se reutilizan.
+`nvidia_cpp_asr_offline` and `nvidia_cpp_asr_streaming` use the same ASR, runtime,
+and note generator without declaring or preparing the diarizer. The server starts
+with ASR only; HTTP requests send `diarization=false` and the WebSocket session sends
+`speaker_diarization=false`. They produce a `Transcript` with timestamps and no
+speakers.
 
 ```bash
-uv run scribnic run consulta.wav --workflow nvidia_cpp_asr_offline
-uv run --extra streaming scribnic run consulta.wav --workflow nvidia_cpp_asr_streaming
-
-# Obtener solo la transcripción, sin generar nota.
-uv run scribnic run consulta.wav --workflow nvidia_cpp_asr_offline --output transcript
+uv run scribnic run consultation.wav --workflow nvidia_cpp_asr_offline
+uv run scribnic run consultation.wav --workflow nvidia_cpp_asr_offline --output transcript
 ```
 
-Desactivar diarización evita ejecutar ese modelo. Para aislar solo el efecto de las
-etiquetas sobre una nota, utilizar en cambio la misma transcripción diarizada y su
-proyección `without_speakers()` con el mismo generador.
+Disabling diarization avoids running that model. To isolate only the effect of
+labels on a note, use the same diarized transcript and its `without_speakers()`
+projection instead.
 
-## Pendiente: residencia por servicio
+## Diarization strategy
 
-Estas son notas de diseño; no hay una clave `keep_loaded` implementada ni descarga
-selectiva de modelos después de una etapa. Actualmente `session.start()` precarga
-los pasos seleccionados; sin esa llamada, `run()` los carga bajo demanda. Una sesión
-los conserva hasta `close()`. Los archivos preparados por `setup` permanecen en la
-caché en disco y no equivalen a modelos cargados en RAM.
-
-La futura política debe separar cuándo cargar de cuánto tiempo conservar. Podría
-mantenerse voz residente y liberar el generador al terminar la nota, o al revés.
-Liberar al terminar una etapa de streaming significaría cerrar la consulta completa,
-no descargar y recargar el modelo entre cada chunk. `WorkflowSession` aplicaría la
-política común; el backend/runtime liberaría sus recursos usando las capacidades
-del servicio. Un comando de liberación soportado y detener un proceso propio son
-mecanismos distintos para esa misma política. Gestionar modelos de endpoints
-externos requiere un contrato explícito sobre la propiedad y gestión del servicio.
-
-Conservar solo diarización tiene sentido, pero el gestor actual de NeMo carga ASR
-y diarizador en el mismo proceso. No ofrece una operación para liberar únicamente
-uno de ellos. Haría falta soporte granular del servidor o separar servicios y
-componer sus resultados. La unidad de residencia debe representar esa agrupación
-real, en lugar de suponer que cada archivo de pesos tiene un ciclo de vida propio.
-
-La CLI crea y cierra una sesión por comando. Precargar solo desplaza la carga a otra
-fase; conservar modelos no evita recargas entre comandos independientes. Liberar
-voz antes de cargar notas sí podría reducir el pico de RAM dentro de un comando.
-La reutilización entre consultas aporta su beneficio en una app o evaluador que
-mantenga abierta la misma sesión Python.
-
-## Estrategia de diarización
-
-El runtime C++ reconoce palabras y les atribuye un hablante mediante la actividad
-temporal del diarizador. Se registra `speaker_attribution_strategy=word_time_alignment`.
-La antigua referencia NeMo/Python streaming usaba `masked_asr=true`: características
-acústicas enmascaradas por actividad y un estado ASR por hablante. No es una
-separación de fuentes; durante solapes puede conservar la misma mezcla de voces.
-La referencia Python se retiró del núcleo y sus dependencias, no se presenta como
-una implementación equivalente al C++. Su código permanece en la historia de Git.
+The C++ runtime recognizes words and attributes each to a speaker from the
+diarizer's activity over time, recorded as
+`speaker_attribution_strategy=word_time_alignment`. The former NeMo/Python reference
+used `masked_asr=true`: acoustic features masked by speaker activity and one ASR
+state per speaker. That is not source separation, and overlapping speech can keep
+the same mixture. The Python reference and its `[nvidia]` extra were removed from
+the core; the strategy difference and quantization mean results are not equivalent.
+Its code remains in Git history.
 
 ## Profiling
 
-Se guardan carga, request, RTF, configuración, hashes, PID, respuesta nativa y
-logs. Python y el servidor C++ se muestrean por separado. En streaming se conserva
-también el flujo de eventos recibido en JSONL, escrito progresivamente a disco.
-El timeout del cliente mide la espera de eventos del servidor, no la duración total
-de la consulta. `--profile` declara explícitamente que no
-hay captura de operadores C++ mediante Torch; los recursos y spans siguen activos.
-Los servidores externos necesitan su propia instrumentación para medir RAM/CPU.
+Runs record load, request, RTF, configuration, hashes, PID, native response, and
+logs. Python and the C++ server are sampled separately. Streaming also writes the
+received event stream to JSONL as it arrives. The client timeout measures waiting
+for server events, not total request duration. `--profile` explicitly declares that
+C++ operators are not captured through Torch; resource sampling and spans stay on.
 
-La memoria en la caché de modelos, el proceso Python y el proceso nativo son
-conceptos distintos. Mantener el servidor cargado ahorra recargas, pero mantiene
-sus pesos residentes. No sumar picos RSS individuales como si fueran simultáneos.
+Model cache size, Python process memory, and native process memory are different
+quantities. Keeping the server loaded avoids reloads but keeps its weights
+resident. Do not add individual RSS peaks as if they were simultaneous.
 
-## Plataformas y fuentes
+## Platforms and sources
 
-Validado en WSL/Linux x86_64 CPU. Los presets fijan también los archivos oficiales
-para Linux arm64, Windows x86_64 CPU y macOS arm64 Metal; esas plataformas no se
-han validado localmente. La calidad de transcripción/diarización queda pendiente.
+Validated on WSL/Linux x86_64 CPU. Presets also pin the official files for Linux
+arm64, Windows x86_64 CPU, and macOS arm64 Metal, which have not been validated
+locally. Transcription and diarization quality are still to be evaluated.
 
-- [Servidor oficial v0.2.0](https://github.com/NVIDIA/NeMo-Speech.cpp/blob/v0.2.0/docs/server.md)
-- [API y protocolo WebSocket](https://github.com/NVIDIA/NeMo-Speech.cpp/blob/v0.2.0/docs/api.md)
-- [Modelos y cuantización](https://github.com/NVIDIA/NeMo-Speech.cpp/blob/v0.2.0/docs/asr/models.md)
-- [Referencia de ASR por hablante](https://huggingface.co/nvidia/Nemotron-3-Diarization/blob/main/ASR_INTEGRATION_GUIDE.md)
+- [Official server v0.2.0](https://github.com/NVIDIA/NeMo-Speech.cpp/blob/v0.2.0/docs/server.md)
+- [API and WebSocket protocol](https://github.com/NVIDIA/NeMo-Speech.cpp/blob/v0.2.0/docs/api.md)
+- [Models and quantization](https://github.com/NVIDIA/NeMo-Speech.cpp/blob/v0.2.0/docs/asr/models.md)
+- [Per-speaker ASR reference](https://huggingface.co/nvidia/Nemotron-3-Diarization/blob/main/ASR_INTEGRATION_GUIDE.md)
