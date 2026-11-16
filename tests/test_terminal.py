@@ -52,12 +52,12 @@ class TerminalTests(unittest.TestCase):
         """Keep redirected logs small while preserving phase and elapsed information."""
         stream = io.StringIO()
         with TerminalView(stream):
-            with phase("Descargar", detail="model[Q8].gguf") as task:
+            with phase("Download", detail="model[Q8].gguf") as task:
                 task.update(123)
                 task.update(456)
         text = stream.getvalue()
-        self.assertIn("… Descargar · model[Q8].gguf", text)
-        self.assertIn("✓ Descargar · model[Q8].gguf", text)
+        self.assertIn("… Download · model[Q8].gguf", text)
+        self.assertIn("✓ Download · model[Q8].gguf", text)
         self.assertEqual(len(text.splitlines()), 2)
         self.assertNotIn("\x1b", text)
         self.assertIsNone(current_observer())
@@ -68,7 +68,7 @@ class TerminalTests(unittest.TestCase):
         with patch.dict(os.environ, {"TERM": "xterm-256color"}):
             with self.assertRaises(ValueError):
                 with TerminalView(stream):
-                    with phase("Cargar", detail="model[Q8]"):
+                    with phase("Load", detail="model[Q8]"):
                         raise ValueError("broken")
         text = stream.getvalue()
         self.assertIn("\x1b[", text)
@@ -145,23 +145,23 @@ class TerminalTests(unittest.TestCase):
                 ):
                     with tracer().start_as_current_span("scribnic.service.load"):
                         pass
-        loads = [event for event in events if event.label == "Cargar servicio"]
+        loads = [event for event in events if event.label == "Load service"]
         self.assertEqual([event.detail for event in loads], ["Bonsai-PQ2_0"] * 2)
 
     def test_loading_finishes_before_each_inference_phase_starts(self) -> None:
         """Show load/request order while retaining inclusive step spans for reports."""
         loads = (
-            ("scribnic.service.load", "Cargar servicio"),
-            ("scribnic.model.load", "Cargar modelo"),
+            ("scribnic.service.load", "Load service"),
+            ("scribnic.model.load", "Load model"),
         )
         phases = (
-            ("transcript", "scribnic.speech.request", "Transcribir"),
+            ("transcript", "scribnic.speech.request", "Transcribe"),
             (
                 "diarized_transcript",
                 "scribnic.speech.request",
-                "Transcribir y diarizar",
+                "Transcribe and diarize",
             ),
-            ("note", "scribnic.note.request", "Generar nota"),
+            ("note", "scribnic.note.request", "Generate note"),
         )
         for (load, load_label), (output, name, label) in product(loads, phases):
             with self.subTest(load=load, output=output):
@@ -213,7 +213,7 @@ class CLICompatibilityTests(unittest.TestCase):
         ):
             main(["run", "audio.wav", "--workflow", "bonsai_note"])
         self.assertEqual(caught.exception.code, 130)
-        self.assertIn("interrumpida", stderr.getvalue())
+        self.assertIn("interrupted", stderr.getvalue())
         self.assertEqual(stdout.getvalue(), "")
         self.assertIsNone(current_observer())
 
@@ -253,8 +253,8 @@ class CLICompatibilityTests(unittest.TestCase):
         data = json.loads(stdout.getvalue())
         self.assertEqual(data["requested_output"], "diarized_transcript")
         self.assertEqual(len(calls), 1)
-        self.assertIn("Transcribir y diarizar", stderr.getvalue())
-        self.assertNotIn("Generar nota", stderr.getvalue())
+        self.assertIn("Transcribe and diarize", stderr.getvalue())
+        self.assertNotIn("Generate note", stderr.getvalue())
         self.assertNotIn("\x1b", stdout.getvalue())
 
 
@@ -280,7 +280,7 @@ class DownloadProgressTests(unittest.TestCase):
         self.assertEqual(transferred[-1].state, "done")
         self.assertEqual(transferred[-1].completed, len(payload))
         self.assertEqual(transferred[-1].total, len(payload))
-        self.assertIn("Verificar caché", [event.label for event in events])
+        self.assertIn("Check cache", [event.label for event in events])
 
     def test_unknown_length_uses_no_total_and_checksum_error_removes_temporary(
         self,

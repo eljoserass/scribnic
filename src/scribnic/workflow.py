@@ -337,7 +337,7 @@ class WorkflowSession:
         state.resources = monitor.summary()
         result = state.snapshot("success")
         if store is not None:
-            with phase("Guardar resultados e informe"):
+            with phase("Save results and report"):
                 store.save(result)
         return result
 

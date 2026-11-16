@@ -88,18 +88,16 @@ def run_command(
         else:
             present_result(result, sys.stdout)
         view.summary(result)
-        view.console.print(f"Informe: {directory / 'report.html'}", markup=False)
+        view.console.print(f"Report: {directory / 'report.html'}", markup=False)
     except WorkflowRunError as error:
         view.error(f"Error: {error}")
-        view.console.print(
-            "Los artefactos completados se conservan en el directorio de resultados."
-        )
+        view.console.print("Completed artifacts are kept in the output directory.")
         raise typer.Exit(1) from error
     except (ValueError, OSError, RuntimeError, ImportError) as error:
         view.error(f"Error: {error}")
         raise typer.Exit(1) from error
     except KeyboardInterrupt:
-        view.error("Ejecución interrumpida.")
+        view.error("Run interrupted.")
         raise typer.Exit(130) from None
 
 
@@ -121,12 +119,12 @@ def setup_command(
         with view, redirect_stdout(sys.stderr):
             view.header(workflow)
             setup_workflow(workflow, offline=offline)
-        print("Recursos preparados. Los modelos se cargarán al ejecutar el workflow.")
+        print("Resources ready. Models load when the workflow runs.")
     except (ValueError, OSError, RuntimeError, ImportError) as error:
         view.error(f"Error: {error}")
         raise typer.Exit(1) from error
     except KeyboardInterrupt:
-        view.error("Preparación interrumpida.")
+        view.error("Setup interrupted.")
         raise typer.Exit(130) from None
 
 

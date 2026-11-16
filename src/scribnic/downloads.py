@@ -36,7 +36,7 @@ def sha256_file(path: Path) -> str:
 def download_file(url: str, path: Path, checksum: str, *, allowed: bool) -> Path:
     """Download atomically, reporting verified cache reuse and actual transferred bytes."""
     if path.is_file():
-        with phase("Verificar caché", detail=path.name):
+        with phase("Check cache", detail=path.name):
             valid = sha256_file(path) == checksum
         if valid:
             return path
@@ -51,7 +51,7 @@ def download_file(url: str, path: Path, checksum: str, *, allowed: bool) -> Path
                 size = response.headers.get("Content-Length")
                 total = int(size) if size and size.isdigit() else None
                 progress = ProgressTask(
-                    "Descargar", detail=path.name, total=total, unit="bytes"
+                    "Download", detail=path.name, total=total, unit="bytes"
                 )
                 try:
                     transferred = 0
@@ -68,7 +68,7 @@ def download_file(url: str, path: Path, checksum: str, *, allowed: bool) -> Path
                     raise
                 else:
                     progress.finish()
-        with phase("Verificar descarga", detail=path.name):
+        with phase("Verify download", detail=path.name):
             if sha256_file(temporary) != checksum:
                 raise ValueError(
                     f"Downloaded asset checksum does not match: {path.name}"
@@ -122,10 +122,10 @@ def prepare_binary(runtime: RuntimeConfig, cache: Path, download: bool) -> Path:
         return binary
     archive = directory / Path(asset["url"]).name
     download_file(asset["url"], archive, asset["sha256"], allowed=download)
-    with phase("Descomprimir runtime", detail=runtime.name):
+    with phase("Extract runtime", detail=runtime.name):
         _extract_archive(archive, directory)
     if runtime.settings.get("build_target"):
-        with phase("Compilar runtime", detail=runtime.name):
+        with phase("Build runtime", detail=runtime.name):
             _build_runtime(runtime, directory, download=download)
     if not binary.is_file():
         raise ValueError(f"Runtime archive did not contain {asset['binary']}.")
@@ -236,7 +236,7 @@ def prepare_model(
 ) -> Path | None:
     """Prepare the format selected explicitly by a model/runtime configuration."""
     if runtime.engine == "transformers":
-        with phase("Preparar modelo", detail=model.name):
+        with phase("Prepare model", detail=model.name):
             extra = str(runtime.settings.get("python_extra", "moss"))
             return _prepare_snapshot(model, download, extra=extra)
     if runtime.engine not in {"llama_cpp", "whisper_cpp", "nemo_cpp"}:
@@ -332,7 +332,7 @@ class ResourceManager:
     def prepare(self, step: StepConfig) -> PreparedStep:
         """Download versioned weights, companions, and native runtimes as needed."""
         if step.name not in self._prepared:
-            with phase("Preparar recursos", detail=step.model.name):
+            with phase("Prepare resources", detail=step.model.name):
                 source = None
                 _validate_python_packages(step.runtime)
                 if "source" in step.runtime.assets:

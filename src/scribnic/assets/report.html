@@ -1,51 +1,51 @@
 <!doctype html>
-<html lang="es">
+<html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Scribnic · ${workflow}</title>
 <style>${styles}</style>
 <main>
   <header>
-    <div class="eyebrow">SCRIBNIC / REGISTRO LOCAL</div>
-    <h1>De la conversación<br>a la nota.</h1>
+    <div class="eyebrow">SCRIBNIC / LOCAL RUN</div>
+    <h1>From conversation<br>to note.</h1>
     <span class="pill">${status}</span>
     <p class="muted">${workflow} · ${started_at}</p>
-    <p class="identifier">Ejecución ${run_id} · Traza ${trace_id}</p>
+    <p class="identifier">Run ${run_id} · Trace ${trace_id}</p>
   </header>
   <div class="metrics">${cards}</div>
   ${error}
   <div class="columns">
     <section>
-      <div class="eyebrow">GENERACIÓN / BORRADOR</div>
-      <h2>Nota clínica</h2>
+      <div class="eyebrow">GENERATION / DRAFT</div>
+      <h2>Clinical note</h2>
       <pre class="note">${note}</pre>
     </section>
     <section>
-      <div class="eyebrow">CONTENIDO / ENTRADA</div>
-      <h2>Transcripción</h2>
+      <div class="eyebrow">CONTENT / INPUT</div>
+      <h2>Transcript</h2>
       ${audio}
       ${transcript}
     </section>
   </div>
   <section class="details">
-    <h2>Etapas</h2>
+    <h2>Steps</h2>
     <div class="table"><table>
-      <thead><tr><th>Etapa</th><th>Tiempo</th><th>RTF voz</th><th>Prefill</th><th>Decode</th></tr></thead>
+      <thead><tr><th>Step</th><th>Time</th><th>Speech RTF</th><th>Prefill</th><th>Decode</th></tr></thead>
       <tbody>${steps}</tbody>
     </table></div>
-    <p class="muted">El tiempo total incluye preparación y persistencia. Las tasas son del motor cuando están disponibles.</p>
+    <p class="muted">Total time includes preparation and persistence. Rates come from the engine when available.</p>
   </section>
   <section class="details">
-    <h2>Recursos observados</h2>
+    <h2>Observed resources</h2>
     <div class="table"><table>
-      <thead><tr><th>Proceso</th><th>Pico RSS muestreado</th><th>CPU media</th></tr></thead>
+      <thead><tr><th>Process</th><th>Peak sampled RSS</th><th>Mean CPU</th></tr></thead>
       <tbody>${resources}</tbody>
     </table></div>
-    <p class="muted">CPU expresada en cores equivalentes. RSS es memoria residente por proceso, no VRAM. La suma se calcula en cada muestreo y puede contar páginas compartidas varias veces; no suma picos individuales. El muestreo puede omitir picos breves. Los servicios externos necesitan su propia instrumentación.</p>
+    <p class="muted">CPU is in equivalent cores. RSS is resident memory per process, not VRAM. The sum is taken at each sample and may count shared pages more than once; it never adds individual peaks. Sampling can miss short spikes. External services need their own instrumentation.</p>
   </section>
   ${profiling}
   <details>
-    <summary>Configuración efectiva y procedencia</summary>
+    <summary>Effective configuration and provenance</summary>
     <pre>${configuration}</pre>
   </details>
   <footer>${links}</footer>
