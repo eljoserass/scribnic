@@ -55,6 +55,7 @@ First tagged release. It summarizes development from 2026-09-25 to 2026-11-18.
 
 ### Maintenance
 
+- Release under the MIT license, with citation metadata in `CITATION.cff`.
 - Continuous integration for linting, formatting, base installation without Torch,
   and unit tests; Dependabot updates; pre-commit hooks.
 

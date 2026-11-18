@@ -296,3 +296,8 @@ services. The live MOSS test runs with `SCRIBNIC_LIVE_TESTS=1` and
 | [Hardware selection](docs/hardware_selection.md) | Unimplemented proposal for device and dtype selection |
 | [Text note evaluation](docs/text_note_evaluation.md) | LFM3 text vs Bonsai 4B comparison, 2026-10-28 |
 | [Releasing](docs/releasing.md) | Versioning, milestones, changelog, and release steps |
+
+## License
+
+Scribnic is released under the [MIT license](LICENSE). Model weights and
+runtimes it downloads keep their own licenses; check each model card.
