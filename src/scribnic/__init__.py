@@ -1,5 +1,7 @@
 """Reusable local scribe workflows, independent of CLI and application servers."""
 
+from importlib.metadata import version as _distribution_version
+
 from .artifacts import (
     Artifact,
     ArtifactKind,
@@ -22,6 +24,9 @@ from .config import (
 )
 from .storage import load_artifact, save_artifact
 from .workflow import WorkflowRunError, WorkflowSession, open_workflow
+
+# The version lives only in pyproject.toml; read it from the installed metadata.
+__version__ = _distribution_version("scribnic")
 
 __all__ = [
     "Artifact",

@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from contextlib import nullcontext
 from dataclasses import replace
+from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -143,7 +144,7 @@ class BackendProgressTests(unittest.TestCase):
                 events: list[ProgressEvent] = []
                 with (
                     patch.object(
-                        backend, "_load", side_effect=lambda: _load_fake_moss(backend)
+                        backend, "_load", side_effect=partial(_load_fake_moss, backend)
                     ) as load,
                     patch.object(backend, "_cpu_threads", return_value=nullcontext(2)),
                     patch.object(backend, "_describe_runtime"),
