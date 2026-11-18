@@ -43,6 +43,8 @@ First tagged release. It summarizes development from 2026-09-25 to 2026-11-18.
 
 - Keep engine timestamps instead of rejecting transcripts with unusual timing.
 - Group windowed Whisper words into sentences.
+- Read the MOSS checkpoint index as UTF-8 instead of the locale encoding
+  (Windows).
 - Show service loading before inference progress, across all adapters.
 - Replace quantized weights from personal accounts with sources from identified
   organizations.
