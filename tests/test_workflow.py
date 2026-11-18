@@ -214,7 +214,7 @@ class DiscoveryTests(unittest.TestCase):
             root = Path(directory)
             first = root / "one.toml"
             first.write_text('name = "one"\n')
-            self.assertEqual(discover_workflow(root), first)
+            self.assertEqual(discover_workflow(root), first.resolve())
             (root / "two.toml").write_text('name = "two"\n')
             with self.assertRaisesRegex(ValueError, "Select a workflow"):
                 discover_workflow(root)

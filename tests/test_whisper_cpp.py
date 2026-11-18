@@ -115,7 +115,8 @@ class WhisperPreparationTests(unittest.TestCase):
             binary.write_bytes(b"fake executable")
             binary.chmod(0o755)
             with chdir(directory):
-                self.assertEqual(prepare_binary(runtime, Path("unused"), False), binary)
+                resolved = prepare_binary(runtime, Path("unused"), False)
+                self.assertEqual(resolved, binary.resolve())
 
     def test_binary_override_uses_an_existing_executable(self):
         runtime = load_workflow("whisper_bonsai").steps[0].runtime
