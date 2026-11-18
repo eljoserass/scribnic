@@ -1,0 +1,25 @@
+name: Feature or model request
+description: Propose a capability, workflow, model preset, or runtime.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What you need to do and why the current workflows do not cover it.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: >-
+        The behaviour you would like. For model presets, include the weight
+        source organization, format/quantization, and license
+        (see docs/model_sources.md).
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
