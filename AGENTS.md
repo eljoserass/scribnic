@@ -208,5 +208,7 @@ def real_time_factor(
   inference services during ordinary unit tests.
 - Run checks appropriate to the change. Documentation-only edits need no model
   runs. Do not repeat expensive checks after they pass without a concrete reason.
+- Write Conventional Commit messages and record user-visible changes under
+  `## [Unreleased]` in `CHANGELOG.md`; see `CONTRIBUTING.md`.
 - Preserve the user's notes, including `TODO` and `ARCHITECTURE_EVALUATION.md`.
   Generated runs, model caches, and local recordings are not source code.

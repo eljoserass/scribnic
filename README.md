@@ -4,6 +4,12 @@ Scribnic is a local clinical scribe core. The CLI, applications, and evaluation
 tools share the same Python API. A **workflow** declares how to produce a clinical
 note from audio or from a transcript. The bundled templates write Spanish SOAP notes.
 
+> [!WARNING]
+> Scribnic is research software, not a medical device. Generated transcripts and
+> notes can be incomplete or wrong. It is not validated for clinical use; a
+> qualified professional must review every note, and deployments must follow the
+> applicable health data and medical device regulations.
+
 Every model family plugs in the same way: a workflow step selects a **backend**,
 a **model preset**, and a **runtime preset**. Whisper, NVIDIA NeMo, Bonsai, Qwen,
 LFM3, and MOSS are all just combinations of those three pieces.
@@ -262,12 +268,17 @@ uv run ruff check src tests
 uv run ruff format --check src tests
 uv run ruff check src/scribnic/telemetry --extend-select D,ANN
 uv run python -m unittest discover -s tests -v
+uvx pre-commit install   # optional: run the hooks on every commit
 ```
 
 Ordinary tests use fakes; they do not download models or contact inference
 services. The live MOSS test runs with `SCRIBNIC_LIVE_TESTS=1` and
 `SCRIBNIC_TEST_AUDIO`. Design, documentation, and style rules are in
-[AGENTS.md](AGENTS.md).
+[AGENTS.md](AGENTS.md); the contribution workflow is in
+[CONTRIBUTING.md](CONTRIBUTING.md). Changes per version are in
+[CHANGELOG.md](CHANGELOG.md), and the release process in
+[docs/releasing.md](docs/releasing.md). Report vulnerabilities as described in
+[SECURITY.md](SECURITY.md).
 
 ## Documentation
 
@@ -284,3 +295,4 @@ services. The live MOSS test runs with `SCRIBNIC_LIVE_TESTS=1` and
 | [Speech candidates](docs/asr_models.md) | Research on future ASR and audio-to-note models |
 | [Hardware selection](docs/hardware_selection.md) | Unimplemented proposal for device and dtype selection |
 | [Text note evaluation](docs/text_note_evaluation.md) | LFM3 text vs Bonsai 4B comparison, 2026-10-28 |
+| [Releasing](docs/releasing.md) | Versioning, milestones, changelog, and release steps |
