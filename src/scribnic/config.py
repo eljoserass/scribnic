@@ -287,6 +287,18 @@ def _read_toml(path: Path) -> dict:
 
 
 def discover_workflow(path: str | Path) -> Path:
+    """Resolve a workflow file, directory, or bundled preset name to one file.
+
+    Args:
+        path: A workflow TOML file; a directory holding `default.toml` or exactly
+            one workflow; or the name of a bundled workflow preset.
+
+    Returns:
+        The resolved workflow file.
+
+    Raises:
+        ValueError: If a directory is ambiguous or no workflow matches.
+    """
     candidate = Path(path).expanduser()
     if candidate.is_dir():
         default = candidate / "default.toml"
@@ -301,20 +313,65 @@ def discover_workflow(path: str | Path) -> Path:
         return choices[0].resolve()
     if candidate.is_file():
         return candidate.resolve()
-    preset = PRESETS / "workflows" / f"{path}.toml"
-    if preset.is_file():
+    preset = _bundled_preset("workflows", f"{path}.toml")
+    if preset is not None:
         return preset
     raise ValueError(f"Workflow not found: {path}")
 
 
+def _bundled_preset(category: str, filename: str) -> Path | None:
+    """Find a bundled preset by file name anywhere under its category directory.
+
+    Subdirectories only organize presets, for example `models/speech/whisper/`.
+    Names stay unique, so workflows refer to a preset by name alone and moving a
+    file between subdirectories does not change its name. A path relative to the
+    category directory is also accepted.
+
+    Args:
+        category: Directory under `presets/`, such as `models` or `notes`.
+        filename: Preset file name including its suffix, or a relative path.
+
+    Returns:
+        The preset file, or None when no bundled preset has that name.
+
+    Raises:
+        ValueError: If several bundled presets share the file name.
+    """
+    root = PRESETS / category
+    direct = root / filename
+    if direct.is_file():
+        return direct
+    matches = sorted(
+        path for path in root.rglob("*") if path.name == filename and path.is_file()
+    )
+    if len(matches) > 1:
+        listed = ", ".join(str(path.relative_to(root)) for path in matches)
+        raise ValueError(f"Ambiguous {category} preset {filename}: {listed}")
+    return matches[0] if matches else None
+
+
 def _preset_path(name: str, category: str, directory: Path) -> Path:
+    """Resolve a preset reference to a file next to the workflow or bundled.
+
+    Args:
+        name: File name relative to the workflow directory, or a bundled preset
+            name with or without its suffix.
+        category: Bundled preset category: `models`, `runtimes`, or `notes`.
+        directory: Directory of the workflow file that refers to the preset.
+
+    Returns:
+        The preset file.
+
+    Raises:
+        ValueError: If the name is unknown or matches several bundled presets.
+    """
     candidate = directory / name
     if candidate.is_file():
         return candidate.resolve()
     suffix = ".md" if category == "notes" else ".toml"
     filename = name if name.endswith(suffix) else name + suffix
-    preset = PRESETS / category / filename
-    if not preset.is_file():
+    preset = _bundled_preset(category, filename)
+    if preset is None:
         raise ValueError(f"Unknown {category} preset or file: {name}")
     return preset
 

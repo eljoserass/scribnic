@@ -19,7 +19,7 @@ LFM3, and MOSS are all just combinations of those three pieces.
 | Piece | Responsibility | Lives in |
 | --- | --- | --- |
 | Workflow | Selects steps and the default output (`note`) | `presets/workflows/*.toml` |
-| Model preset | Identifies weights: repository, revision, file, SHA256, format/quantization, accepted inputs and output | `presets/models/*.toml` |
+| Model preset | Identifies weights: repository, revision, file, SHA256, format/quantization, accepted inputs and output | `presets/models/<role>/<family>/*.toml` |
 | Runtime preset | Selects an engine and its pinned distribution, plus engine settings | `presets/runtimes/*.toml` |
 | Runtime manager | Installs or locates the engine, starts the process, waits for readiness, and stops it | `runtimes/` |
 | Backend | Adapts an inference protocol to Scribnic artifacts: builds requests and converts responses | `backends/` |
@@ -97,9 +97,18 @@ Requires Python 3.12–3.14 and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 uv sync --locked
-uv run scribnic setup --workflow nvidia_cpp_offline
-uv run scribnic run consultation.wav --workflow nvidia_cpp_offline
+
+# Note from text: only llama-server and a small note model, no audio models.
+echo "Paciente: tengo tos desde hace tres días." > conversation.txt
+uv run scribnic run conversation.txt --workflow bonsai_note
+
+# Audio to note: Whisper small on whisper.cpp, then Bonsai 2 2B.
+uv run scribnic setup --workflow whisper_bonsai
+uv run scribnic run consultation.wav --workflow whisper_bonsai
 ```
+
+`whisper_bonsai` is the most exercised audio workflow; scribe_eval uses the same
+pairing. Other workflows are listed under [Models and workflows](#models-and-workflows).
 
 `setup` downloads and verifies only the workflow's resources without loading
 models. Native runtimes (NeMo-Speech.cpp, llama-server, Prism) come from pinned
@@ -122,27 +131,58 @@ To install a client from a wheel, use `pip install scribnic-0.1.0-py3-none-any.w
 the `dev` group is not installed. In a checkout, `uv sync --no-dev` excludes
 development tools.
 
-## Workflows by backend and runtime
+## Models and workflows
 
-Speech workflows generate notes with Bonsai 2 2B PQ2_0 on the Prism llama-server
-unless their name says otherwise. Swap the `note` step to try another generator.
+Model presets are grouped by role and then by family under `presets/models/`.
+Workflows refer to presets by name, so the folders only organize them. A speech
+workflow pairs a speech model with a note model; the bundled ones use Bonsai 2 2B
+unless their name says otherwise (`whisper_qwen35_08b_q8_0`). Any note model works
+after any speech model: change the `note` step's `model` and `runtime`.
 
-| Backend | Runtime preset · engine | Models | Workflows | Extra |
+**Speech** (`speech/`): audio → transcript or diarized transcript.
+
+| Family | Presets | Runtime · engine | Workflows | Extra |
 | --- | --- | --- | --- | --- |
-| `openai_transcription` | `whisper_cpp` · whisper-server | Whisper tiny, base, small, medium, large-v3-turbo Q8_0; large-v3 Q5_0 | `whisper_bonsai`, `whisper_bonsai_vad`, `whisper_bonsai_streaming`, `whisper_<size>_<quant>_bonsai`, `whisper_qwen35_08b_q8_0` | — |
-| `openai_transcription` | `nemo_cpp` · nemo-speech | Nemotron 3.5 ASR Q8_0, optional Nemotron 3 Diarization Q8_0 | `nvidia_cpp_offline`, `nvidia_cpp_streaming`, `nvidia_cpp_asr_offline`, `nvidia_cpp_asr_streaming` | `[streaming]` for streaming |
-| `openai_transcription` | `nemo_cpp` · nemo-speech | Parakeet TDT 0.6B v3 Q8_0, optional diarizer | `parakeet_v3_q8_0_bonsai`, `parakeet_v3_q8_0_diarized_bonsai` | — |
-| `openai_transcription` | `sglang_omni_endpoint` · external | MOSS-Transcribe-Diarize | `moss_bonsai_sglang` | — |
-| `moss_transcribe_diarize` | `transformers` · in-process Torch | MOSS-Transcribe-Diarize BF16 | `moss_bonsai`, `moss_bonsai_http` (note on an external endpoint) | `[moss]` |
-| `openai_chat` | `llama_cpp_prism` · llama-server Prism | Bonsai 2 2B / 4B PQ2_0 | `bonsai_note`, `bonsai_4b_note` | — |
-| `openai_chat` | `llama_cpp` · llama-server b11946 | Qwen3.5 0.8B / 2B / 4B, LFM3-1.7B | `qwen35_*_note`, `lfm3_17b_*_note` | — |
-| `llama_audio_note` | `llama_cpp` · llama-server b11946 | LFM3-Audio-2B Q4_K_M + mmproj Q8_0 | `lfm3_audio_note` | `[streaming]` |
-| `moss_audio` | `moss_audio_torch` · in-process Torch | MOSS-Audio-4B-Thinking BF16 | `moss_audio_note` | `[moss-audio]` |
+| Whisper (`whisper/`) | tiny, base, small, medium, large-v3-turbo Q8_0; large-v3 Q5_0 | `whisper_cpp` · whisper-server | `whisper_bonsai` (small), `whisper_bonsai_vad`, `whisper_bonsai_streaming`, `whisper_<size>_<quant>_bonsai`, `whisper_qwen35_08b_q8_0` | — |
+| NVIDIA (`nvidia/`) | Nemotron 3.5 ASR streaming 0.6B Q8_0, Parakeet TDT 0.6B v3 Q8_0, optional Nemotron 3 Diarization Q8_0 | `nemo_cpp` · nemo-speech | `nvidia_cpp_offline`, `nvidia_cpp_streaming`, `nvidia_cpp_asr_offline`, `nvidia_cpp_asr_streaming`, `parakeet_v3_q8_0_bonsai`, `parakeet_v3_q8_0_diarized_bonsai` | `[streaming]` for streaming |
+| MOSS (`moss/`) | MOSS-Transcribe-Diarize BF16 | `transformers` · in-process Torch; `sglang_omni_endpoint` · external | `moss_bonsai`, `moss_bonsai_http` (note on an external endpoint), `moss_bonsai_sglang` | `[moss]` in process |
 
-Text workflows (`*_note`) accept plain text or a saved transcript and run only the
-note step. `setup` prepares weights and engines; it never installs Python packages.
-`[moss]` and `[moss-audio]` pin incompatible Transformers versions, so use separate
-environments for them; `--all-extras` is not valid.
+**Note** (`note/`): plain or diarized transcript → note. Text workflows (`*_note`)
+accept plain text or a saved transcript and run only this step.
+
+| Family | Presets | Runtime · engine | Workflows |
+| --- | --- | --- | --- |
+| Bonsai 2 (`bonsai/`) | 2B, 4B PQ2_0 | `llama_cpp_prism` · llama-server Prism fork | `bonsai_note`, `bonsai_4b_note` |
+| Qwen3.5 (`qwen/`) | 0.8B, 2B, 4B Q4_K_M / Q8_0 | `llama_cpp` · llama-server b11946 | `qwen35_<size>_<quant>_note` |
+| LFM3 (`lfm/`) | 1.7B Q4_K_M, Q8_0, QAD Q4_0 | `llama_cpp` · llama-server b11946 | `lfm3_17b_<quant>_note` |
+
+**Audio to note** (`audio_note/`): audio → note without a transcript.
+
+| Family | Presets | Runtime · engine | Workflows | Extra |
+| --- | --- | --- | --- | --- |
+| LFM3-Audio (`lfm/`) | 2B Q4_K_M + mmproj Q8_0 | `llama_cpp` · llama-server b11946 | `lfm3_audio_note` | `[streaming]` |
+| MOSS-Audio (`moss/`) | 4B-Thinking BF16 | `moss_audio_torch` · in-process Torch | `moss_audio_note` | `[moss-audio]` |
+
+`setup` prepares weights and engines; it never installs Python packages. `[moss]`
+and `[moss-audio]` pin incompatible Transformers versions, so use separate
+environments for them; `--all-extras` is not valid. Comparisons are in
+[note models](docs/note_models.md) and [speech presets](docs/asr_presets.md).
+
+### How a model gets a preset
+
+- **Source:** weights from the model author's organization, or a conversion by an
+  identified organization. No personal accounts, with one documented exception:
+  the official whisper.cpp repository.
+- **Reproducible:** pinned repository, revision, file, and SHA256, and the preset
+  names the real weight format and quantization.
+- **Local runtime:** it runs on an engine Scribnic manages (whisper.cpp,
+  llama.cpp, NeMo-Speech.cpp) or in process behind an optional extra, so the base
+  installation stays small.
+- **Not a quality claim:** a preset makes a run reproducible. Validated platforms
+  are stated separately, and clinical quality is measured with scribe_eval.
+
+The full policy and catalog are in [model sources](docs/model_sources.md). To
+propose a model, open a feature request with its source, format, and license.
 
 ```bash
 # NVIDIA streaming adds only the small WebSocket client.
@@ -159,8 +199,9 @@ SCRIBNIC_MOSS_BASE_URL=http://127.0.0.1:8000/v1 \
   uv run scribnic run consultation.wav --workflow moss_bonsai_sglang
 ```
 
-Validated on WSL/Linux x86_64 CPU. macOS and Windows assets are configured but
-need testing on those hosts. The MOSS full checkpoints and SGLang service have not
+Validated on WSL/Linux x86_64 CPU. Unit tests run in CI on Linux, macOS, and
+Windows; macOS and Windows assets are configured but still need full runs on
+those hosts. The MOSS full checkpoints and SGLang service have not
 been run here. Clinical quality is still being evaluated for every workflow.
 
 ## Python API
@@ -168,14 +209,13 @@ been run here. Clinical quality is still being evaluated for every workflow.
 ```python
 from scribnic import AudioFile, Transcript, open_workflow
 
-with open_workflow("nvidia_cpp_offline") as scribe:
+with open_workflow("whisper_bonsai") as scribe:
     startup = scribe.start()  # Optional: preload before timing requests.
     result = scribe.run(AudioFile("consultation.wav"), output_dir="runs/consultation")
     print(result.note.text)
 
-    speech = scribe.run(AudioFile("other.wav"), output="diarized_transcript")
-    plain = speech.transcript.without_speakers()
-    ablation = scribe.run(plain)  # Note step only, on the supplied text.
+    speech = scribe.run(AudioFile("other.wav"), output="transcript")
+    again = scribe.run(speech.transcript)  # Note step only, on the supplied text.
     manual = scribe.run(Transcript.from_text("Paciente: tengo tos desde ayer."))
 ```
 
@@ -188,11 +228,11 @@ parallel evaluation, and [incremental audio](docs/streaming.md) for streaming.
 
 ```bash
 # Stop at the speech artifact.
-uv run scribnic run consultation.wav --workflow nvidia_cpp_offline \
-  --output diarized_transcript --output-dir runs/speech
+uv run scribnic run consultation.wav --workflow whisper_bonsai \
+  --output transcript --output-dir runs/speech
 
 # Generate a note from a saved artifact, without audio recognition.
-uv run scribnic run runs/speech/diarized_transcript.json --workflow bonsai_note
+uv run scribnic run runs/speech/transcript.json --workflow bonsai_note
 
 # One JSON document on stdout; progress on stderr.
 uv run scribnic run conversation.txt --workflow bonsai_note --format json
@@ -215,12 +255,8 @@ default_output = "note"
 
 [steps.speech]
 backend = "openai_transcription"
-model = "nemotron-3.5-asr-streaming-0.6b.q8_0"
-runtime = "nemo_cpp"
-output = "diarized_transcript"
-
-[steps.speech.companions]
-diarization = "Nemotron-3-Diarization.q8_0"
+model = "whisper_small_q8_0"
+runtime = "whisper_cpp"
 
 [steps.note]
 backend = "openai_chat"

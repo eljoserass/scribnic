@@ -7,6 +7,7 @@ import unittest
 import wave
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 from scribnic import (
     AudioFile,
@@ -19,11 +20,13 @@ from scribnic import (
 )
 from scribnic.artifacts import StepOutput
 from scribnic.config import (
+    PRESETS,
     ModelConfig,
     RuntimeConfig,
     StepConfig,
     WorkflowConfig,
     discover_workflow,
+    load_workflow,
 )
 
 
@@ -209,6 +212,40 @@ class WorkflowTests(unittest.TestCase):
 
 
 class DiscoveryTests(unittest.TestCase):
+    def test_bundled_preset_names_are_unique_across_subdirectories(self):
+        for category in ("models", "runtimes", "workflows", "notes"):
+            names = [path.name for path in (PRESETS / category).rglob("*.*")]
+            duplicates = sorted({name for name in names if names.count(name) > 1})
+            self.assertEqual(duplicates, [], category)
+
+    def test_every_bundled_workflow_resolves_its_presets(self):
+        for workflow in sorted((PRESETS / "workflows").rglob("*.toml")):
+            with self.subTest(workflow=workflow.stem):
+                load_workflow(workflow.stem)
+
+    def test_duplicate_bundled_preset_names_are_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            presets = Path(directory)
+            for family in ("whisper", "other"):
+                folder = presets / "models" / "speech" / family
+                folder.mkdir(parents=True)
+                (folder / "same.toml").write_text("", encoding="utf-8")
+            (presets / "workflows").mkdir()
+            workflow = presets / "workflows" / "uses_same.toml"
+            workflow.write_text(
+                'name = "uses_same"\n'
+                "[steps.speech]\n"
+                'backend = "openai_transcription"\n'
+                'model = "same"\n'
+                'runtime = "whisper_cpp"\n',
+                encoding="utf-8",
+            )
+            with (
+                patch("scribnic.config.PRESETS", presets),
+                self.assertRaisesRegex(ValueError, "Ambiguous models preset"),
+            ):
+                load_workflow("uses_same")
+
     def test_directory_discovery_requires_one_file_or_default(self):
         with tempfile.TemporaryDirectory() as directory:
             # Discovery returns resolved paths; temporary directories are symlinks
