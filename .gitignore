@@ -17,3 +17,6 @@ wheels/
 /runs/
 
 *.wav
+
+# Maintainer scratch notes (planned work lives in GitHub issues)
+/TODO
