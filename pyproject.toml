@@ -41,7 +41,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-streaming = ["websockets>=15,<17"]
+streaming = ["websockets>=15,<18"]
 moss = [
     "accelerate>=1,<2",
     "huggingface-hub>=1,<2",
