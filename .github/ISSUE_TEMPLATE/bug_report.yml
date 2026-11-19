@@ -1,0 +1,44 @@
+name: Bug report
+description: Something does not work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Never attach patient audio, transcripts, notes, or any other health
+        information.** Reproduce with synthetic or public recordings only.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you ran, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Workflow preset or TOML, command or Python call, and input kind.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error output
+      description: Traceback or relevant lines from `runtime/*` logs.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Scribnic version
+      description: Output of `scribnic --version` or the commit hash.
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: OS, Python version, CPU/GPU, and RAM.
+    validations:
+      required: true

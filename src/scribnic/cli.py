@@ -9,6 +9,7 @@ from typing import Annotated
 
 import typer
 
+from . import __version__
 from .application import execute, new_run_directory, setup_workflow
 from .config import artifact_kind
 from .storage import result_to_dict
@@ -21,6 +22,37 @@ app = typer.Typer(
     no_args_is_help=True,
     pretty_exceptions_enable=False,
 )
+
+
+def _print_version(requested: bool) -> None:
+    """Print the installed Scribnic version and exit when `--version` is given.
+
+    Args:
+        requested: Whether the eager `--version` flag was supplied.
+
+    Raises:
+        typer.Exit: After printing, so no command runs.
+    """
+    if not requested:
+        return
+    typer.echo(f"scribnic {__version__}")
+    raise typer.Exit()
+
+
+@app.callback()
+def global_options(
+    *,
+    version: Annotated[
+        bool,
+        typer.Option(
+            "--version",
+            callback=_print_version,
+            is_eager=True,
+            help="Show the installed version and exit.",
+        ),
+    ] = False,
+) -> None:
+    """Run a local clinical note workflow or prepare its cached resources."""
 
 
 class OutputKind(str, Enum):

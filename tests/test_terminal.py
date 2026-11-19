@@ -51,10 +51,13 @@ class TerminalTests(unittest.TestCase):
     def test_progress_has_plain_boundaries_without_ansi_or_updates(self) -> None:
         """Keep redirected logs small while preserving phase and elapsed information."""
         stream = io.StringIO()
-        with TerminalView(stream):
-            with phase("Download", detail="model[Q8].gguf") as task:
-                task.update(123)
-                task.update(456)
+        # FORCE_COLOR would make Rich emit ANSI even into a redirected stream.
+        with patch.dict(os.environ):
+            os.environ.pop("FORCE_COLOR", None)
+            with TerminalView(stream):
+                with phase("Download", detail="model[Q8].gguf") as task:
+                    task.update(123)
+                    task.update(456)
         text = stream.getvalue()
         self.assertIn("… Download · model[Q8].gguf", text)
         self.assertIn("✓ Download · model[Q8].gguf", text)

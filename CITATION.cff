@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+message: If you use Scribnic in your research, please cite it as below.
+title: "Scribnic: configurable local clinical note workflows"
+type: software
+authors:
+  - given-names: Jose
+    family-names: Rodriguez
+license: MIT
+repository-code: https://github.com/eljoserass/scribnic
+keywords:
+  - clinical notes
+  - speech recognition
+  - diarization
+  - medical scribe

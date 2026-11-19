@@ -82,7 +82,8 @@ class MossAudio:
         if self.device.type == "cuda":
             return
         index = self.prepared.model_path / "model.safetensors.index.json"
-        parameters = json.loads(index.read_text())["metadata"]["total_parameters"]
+        metadata = json.loads(index.read_text(encoding="utf-8"))["metadata"]
+        parameters = metadata["total_parameters"]
         minimum_bytes = parameters * self.torch.empty((), dtype=dtype).element_size()
         available = psutil.virtual_memory().available
         if minimum_bytes > available:

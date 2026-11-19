@@ -211,7 +211,9 @@ class WorkflowTests(unittest.TestCase):
 class DiscoveryTests(unittest.TestCase):
     def test_directory_discovery_requires_one_file_or_default(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            # Discovery returns resolved paths; temporary directories are symlinks
+            # on macOS and may use short names on Windows.
+            root = Path(directory).resolve()
             first = root / "one.toml"
             first.write_text('name = "one"\n')
             self.assertEqual(discover_workflow(root), first)

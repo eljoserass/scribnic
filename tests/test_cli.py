@@ -10,11 +10,24 @@ from unittest.mock import patch
 
 from test_workflow import FakeBackend
 
-from scribnic import open_workflow
+from scribnic import __version__, open_workflow
 from scribnic.cli import main
 
 
 class CLITests(unittest.TestCase):
+    def test_version_flag_prints_installed_version_without_running(self):
+        stdout = io.StringIO()
+        with (
+            redirect_stdout(stdout),
+            patch("scribnic.cli.execute") as execute,
+            patch("scribnic.cli.setup_workflow") as setup,
+        ):
+            main(["--version"])
+
+        self.assertEqual(stdout.getvalue().strip(), f"scribnic {__version__}")
+        execute.assert_not_called()
+        setup.assert_not_called()
+
     def test_json_stdout_is_one_document_and_the_run_has_local_telemetry(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -3,7 +3,32 @@ name = "scribnic"
 version = "0.1.0"
 description = "Configurable local clinical note workflows"
 readme = "README.md"
-requires-python = ">=3.12,<3.15"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Jose Rodriguez" }]
+requires-python = ">=3.12"
+keywords = [
+    "clinical-notes",
+    "speech-recognition",
+    "diarization",
+    "medical-scribe",
+    "llm",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Healthcare Industry",
+    "Intended Audience :: Science/Research",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+]
 dependencies = [
     "openai>=2,<3",
     "opentelemetry-api~=1.45.1",
@@ -56,11 +81,10 @@ url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [tool.ruff]
-target-version = "py312"
 line-length = 88
 
 [tool.ruff.lint]
-select = ["E4", "E7", "E9", "F", "I", "D2", "D3", "D4"]
+select = ["E4", "E7", "E9", "F", "I", "D2", "D3", "D4", "B"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -69,9 +93,77 @@ convention = "google"
 quote-style = "double"
 indent-style = "space"
 
+[project.urls]
+Homepage = "https://github.com/eljoserass/scribnic"
+Documentation = "https://github.com/eljoserass/scribnic/tree/main/docs"
+Issues = "https://github.com/eljoserass/scribnic/issues"
+Changelog = "https://github.com/eljoserass/scribnic/blob/main/CHANGELOG.md"
+
 [project.scripts]
 scribnic = "scribnic.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.12.16,<0.13.0"]
 build-backend = "uv_build"
+
+[tool.repo-review]
+# PY007: uv commands are the task runner; see the Development section of the README.
+# PP301: tests use the standard library unittest runner.
+# MY100, PC140: a type checker will be introduced separately from inherited
+#   violations.
+# PC160, PC180: docs and note templates mix English and Spanish prose; no spell
+#   checker or Markdown reformatting.
+# PC170: there is no reStructuredText.
+# PC901-PC903: hooks run locally and in CI, not through pre-commit.ci.
+ignore = [
+    "PY007",
+    "PP301",
+    "MY100",
+    "PC140",
+    "PC160",
+    "PC170",
+    "PC180",
+    "PC901",
+    "PC902",
+    "PC903",
+]
+
+[tool.git-cliff.changelog]
+# Drafts release notes from Conventional Commits; curate before committing.
+header = ""
+body = """
+{%- macro remote_url() -%}
+https://github.com/eljoserass/scribnic
+{%- endmacro -%}
+{% if version -%}
+## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else -%}
+## [Unreleased]
+{% endif -%}
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | striptags | trim | upper_first }}
+{% for commit in commits %}
+- {% if commit.scope %}**{{ commit.scope }}:** {% endif %}{{ commit.message | upper_first }} \
+([{{ commit.id | truncate(length=7, end="") }}]({{ self::remote_url() }}/commit/{{ commit.id }}))
+{%- endfor %}
+{% endfor %}
+"""
+trim = true
+
+[tool.git-cliff.git]
+conventional_commits = true
+filter_unconventional = true
+split_commits = false
+commit_parsers = [
+    { message = "^feat", group = "<!-- 0 -->Features" },
+    { message = "^fix", group = "<!-- 1 -->Bug fixes" },
+    { message = "^perf", group = "<!-- 2 -->Performance" },
+    { message = "^refactor", group = "<!-- 3 -->Refactoring" },
+    { message = "^docs", group = "<!-- 4 -->Documentation" },
+    { message = "^test", group = "<!-- 5 -->Testing" },
+    { message = "^chore\\(release\\)", skip = true },
+    { message = "^(chore|ci|build)", group = "<!-- 6 -->Maintenance" },
+]
+filter_commits = false
+tag_pattern = "v[0-9].*"
+sort_commits = "oldest"

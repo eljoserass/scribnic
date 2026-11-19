@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint and format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Ruff lint
+        run: uv run --locked --only-group dev ruff check src tests
+      - name: Ruff format
+        run: uv run --locked --only-group dev ruff format --check src tests
+      - name: Docstrings and annotations in migrated packages
+        run: >-
+          uv run --locked --only-group dev
+          ruff check src/scribnic/telemetry --extend-select D,ANN
+
+  base-import:
+    name: Base install imports without Torch
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Install without optional extras
+        run: uv sync --locked --no-dev
+      - name: Import the package and CLI
+        run: |
+          uv run --no-sync python -c "
+          import sys
+          import scribnic, scribnic.cli
+          heavy = {'torch', 'transformers', 'numpy'} & set(sys.modules)
+          assert not heavy, f'base import loaded optional libraries: {heavy}'
+          "
+          uv run --no-sync scribnic --version
+
+  tests:
+    name: Tests (Python ${{ matrix.python-version }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.12", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install with test extras
+        run: uv sync --locked --extra moss --extra streaming
+      - name: Run unit tests
+        # Unit tests use fakes: no model downloads, GPUs, or inference services.
+        run: uv run --no-sync python -m unittest discover -s tests -v

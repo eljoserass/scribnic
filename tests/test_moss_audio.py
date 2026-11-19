@@ -92,7 +92,7 @@ class MossAudioTests(unittest.TestCase):
                 self.assertEqual(len(result.steps), 1)
                 self.assertEqual(infer.call_args.args[0].kind, "audio")
                 raw_path = Path(result.steps[0].metadata["native_output_path"])
-                self.assertEqual(raw_path.read_text(), raw)
+                self.assertEqual(raw_path.read_text(encoding="utf-8"), raw)
                 self.assertTrue((root / "run" / "report.html").is_file())
 
     def test_incomplete_thinking_is_not_a_note(self) -> None:
