@@ -54,9 +54,14 @@ First tagged release. It summarizes development from 2026-09-25 to 2026-11-18.
 - English documentation for the CLI, Python API, presets, streaming, model sources,
   and the validated model/runtime/platform combinations.
 - Contribution, security, and release guides.
+- README starts with the most exercised workflows (`bonsai_note`, `whisper_bonsai`),
+  lists models by role and family, and summarizes how a model gets a preset.
 
 ### Maintenance
 
+- Model presets are grouped by role and family under `presets/models/`
+  (`speech/`, `note/`, `audio_note/`). Preset names are unchanged, and duplicate
+  names are rejected.
 - Release under the MIT license, with citation metadata in `CITATION.cff`.
 - Continuous integration for linting, formatting, base installation without Torch,
   and unit tests; Dependabot updates; pre-commit hooks.
