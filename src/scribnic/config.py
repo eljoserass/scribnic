@@ -163,6 +163,8 @@ def _validate_adapter(step: StepConfig) -> None:
     if step.backend == "openai_chat":
         if engine not in {"llama_cpp", "external_endpoint"}:
             raise ValueError("openai_chat needs llama_cpp or external_endpoint.")
+        if step.template is None and step.instruction is None:
+            raise ValueError(f"Note step {step.name!r} needs a note template.")
         return
     if step.backend == "moss_transcribe_diarize":
         if engine != "transformers":
@@ -441,12 +443,70 @@ def _load_step(name: str, data: dict, directory: Path) -> StepConfig:
     )
 
 
+WORKFLOW_KEYS = frozenset(
+    {"name", "inputs", "default_output", "download_missing", "steps"}
+)
+STEP_KEYS = frozenset(
+    {
+        "backend",
+        "model",
+        "runtime",
+        "template",
+        "source",
+        "output",
+        "model_settings",
+        "runtime_settings",
+        "companions",
+    }
+)
+
+
+def _reject_unknown_keys(data: dict, accepted: frozenset[str], *, where: str) -> None:
+    """Fail on misspelled or unsupported keys instead of silently ignoring them.
+
+    Args:
+        data: One table read from a workflow file.
+        accepted: Keys that table may contain.
+        where: Human-readable location of the table, used in the error.
+
+    Raises:
+        ValueError: If the table contains keys outside `accepted`.
+    """
+    unknown = sorted(set(data) - accepted)
+    if unknown:
+        raise ValueError(
+            f"Unknown key(s) {', '.join(unknown)} in {where}. "
+            f"Accepted keys: {', '.join(sorted(accepted))}."
+        )
+
+
 def load_workflow(path: str | Path | WorkflowConfig) -> WorkflowConfig:
+    """Read a workflow and resolve the model, runtime, and template presets it names.
+
+    This reads files only; it does not download assets, load models, or start
+    processes. `open_workflow` validates the dependency graph before preparing
+    resources.
+
+    Args:
+        path: A workflow file, a directory, a bundled workflow name, or an already
+            loaded configuration, which is returned unchanged.
+
+    Returns:
+        The parsed workflow configuration.
+
+    Raises:
+        ValueError: If the workflow cannot be found, names an unknown preset, or
+            contains unknown or missing keys.
+    """
     if isinstance(path, WorkflowConfig):
         return path
     location = discover_workflow(path)
     data = _read_toml(location)
     try:
+        _reject_unknown_keys(data, WORKFLOW_KEYS, where=str(location))
+        for name, step in data["steps"].items():
+            where = f"step {name!r} of {location}"
+            _reject_unknown_keys(step, STEP_KEYS, where=where)
         steps = tuple(
             _load_step(name, step, location.parent)
             for name, step in data["steps"].items()

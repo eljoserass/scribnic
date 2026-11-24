@@ -28,6 +28,7 @@ from scribnic.config import (
     discover_workflow,
     load_workflow,
 )
+from scribnic.planning import validate_workflow
 
 
 def configuration() -> WorkflowConfig:
@@ -218,10 +219,42 @@ class DiscoveryTests(unittest.TestCase):
             duplicates = sorted({name for name in names if names.count(name) > 1})
             self.assertEqual(duplicates, [], category)
 
-    def test_every_bundled_workflow_resolves_its_presets(self):
+    def test_every_bundled_workflow_resolves_and_validates(self):
         for workflow in sorted((PRESETS / "workflows").rglob("*.toml")):
             with self.subTest(workflow=workflow.stem):
-                load_workflow(workflow.stem)
+                validate_workflow(load_workflow(workflow.stem))
+
+    def test_misspelled_workflow_keys_are_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            workflow = Path(directory) / "typo.toml"
+            workflow.write_text(
+                'name = "typo"\n'
+                'inputs = ["transcript"]\n'
+                "[steps.note]\n"
+                'backend = "openai_chat"\n'
+                'model = "Qwen3.5-2B-Q8_0"\n'
+                'runtime = "llama_cpp"\n'
+                'tempalte = "soap_es"\n',
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "Unknown key\\(s\\) tempalte"):
+                load_workflow(workflow)
+
+    def test_note_step_without_template_fails_before_preparation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            workflow = Path(directory) / "no_template.toml"
+            workflow.write_text(
+                'name = "no_template"\n'
+                'inputs = ["transcript"]\n'
+                "[steps.note]\n"
+                'backend = "openai_chat"\n'
+                'model = "Qwen3.5-2B-Q8_0"\n'
+                'runtime = "llama_cpp"\n',
+                encoding="utf-8",
+            )
+            config = load_workflow(workflow)
+            with self.assertRaisesRegex(ValueError, "needs a note template"):
+                validate_workflow(config)
 
     def test_duplicate_bundled_preset_names_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:

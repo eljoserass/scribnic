@@ -41,6 +41,8 @@ First tagged release. It summarizes development from 2026-09-25 to 2026-11-18.
 
 ### Bug fixes
 
+- Reject unknown keys in workflow files instead of ignoring them, and reject note
+  steps without a template before any server starts.
 - Keep engine timestamps instead of rejecting transcripts with unusual timing.
 - Group windowed Whisper words into sentences.
 - Read the MOSS checkpoint index as UTF-8 instead of the locale encoding
