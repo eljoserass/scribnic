@@ -11,7 +11,20 @@ see [docs/releasing.md](docs/releasing.md).
 
 ## [Unreleased]
 
-First tagged release. It summarizes development from 2026-09-25 to 2026-11-18.
+## [0.1.0] - 2026-11-24
+
+First tagged release. It summarizes development from 2026-09-25 to 2026-11-24.
+
+### Tested on
+
+- **macOS 15.6, Apple Silicon** (Mac Studio, M3 Ultra, 512 GB): a full PriMock57
+  run through scribe_eval with Whisper small Q8_0 on whisper.cpp (Metal), then
+  Bonsai 2 2B PQ2_0 on the Prism llama-server. llama-server sees the Metal device,
+  but Scribnic does not yet log where it offloads layers.
+- **Linux x86_64 (WSL2), CPU only, 11 GiB:** the bundled workflows, except the full
+  MOSS checkpoints and the SGLang service.
+- **CI:** unit tests with fakes on Linux, macOS, and Windows, Python 3.12 and 3.14.
+  Windows has had no full run.
 
 ### Features
 
@@ -65,7 +78,9 @@ First tagged release. It summarizes development from 2026-09-25 to 2026-11-18.
   (`speech/`, `note/`, `audio_note/`). Preset names are unchanged, and duplicate
   names are rejected.
 - Release under the MIT license, with citation metadata in `CITATION.cff`.
+- Accept `openai` 3 and, in the `[streaming]` extra, `websockets` 17.
 - Continuous integration for linting, formatting, base installation without Torch,
   and unit tests; Dependabot updates; pre-commit hooks.
 
-[Unreleased]: https://github.com/eljoserass/scribnic/commits/HEAD
+[Unreleased]: https://github.com/eljoserass/scribnic/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/eljoserass/scribnic/releases/tag/v0.1.0
