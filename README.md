@@ -199,10 +199,18 @@ SCRIBNIC_MOSS_BASE_URL=http://127.0.0.1:8000/v1 \
   uv run scribnic run consultation.wav --workflow moss_bonsai_sglang
 ```
 
-Validated on WSL/Linux x86_64 CPU. Unit tests run in CI on Linux, macOS, and
-Windows; macOS and Windows assets are configured but still need full runs on
-those hosts. The MOSS full checkpoints and SGLang service have not
-been run here. Clinical quality is still being evaluated for every workflow.
+## Tested on
+
+| Platform | Hardware | What ran |
+| --- | --- | --- |
+| macOS 15.6, Apple Silicon | Mac Studio, M3 Ultra, 512 GB | Full PriMock57 run through scribe_eval: Whisper small Q8_0 on whisper.cpp with Metal, then Bonsai 2 2B PQ2_0 on the Prism llama-server |
+| Linux x86_64 (WSL2), CPU only | 11 GiB memory | The bundled workflows, except the full MOSS checkpoints and the SGLang service |
+| Linux, macOS, Windows (CI) | GitHub-hosted runners | Unit tests with fakes, Python 3.12 and 3.14 |
+
+Windows assets are configured but have had no full run. On the Mac, llama-server
+sees the Metal device, but Scribnic does not yet log where it offloads layers
+([#39](https://github.com/eljoserass/scribnic/issues/39)). Clinical quality is
+still being evaluated for every workflow.
 
 ## Python API
 
